@@ -1,0 +1,22 @@
+
+# Byte-compiled / cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Logs
+*.log
+
+# Environment
+.env
+.venv
+env/
+venv/
+
+# Certificates and Exports
+art_exports/exports/
+fingerprint_log.csv
+
+# Credentials
+credentials.json
+token.json
