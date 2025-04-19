@@ -22,5 +22,16 @@ It watches your folder, fingerprints your art, embeds metadata, and certifies yo
 - Web dashboard + public certificate viewer
 - Blockchain anchoring + collector edition tracking
 
+## Screenshots
+
+### 1. Cartified Certificate
+![Certificate Preview](assets/certificate_preview.png)
+
+### 2. Exported Folder Structure
+![Folder Structure](assets/folder_structure.png)
+
+### 3. Metadata Extraction via Terminal
+![Metadata Output](assets/extraction_output.png)
+
 ## Author
 Hafiz Yishawu (@oats.x)
