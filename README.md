@@ -21,14 +21,14 @@ Cartify is a digital authorship and certification system for artists. It fingerp
 
 1. **Clone the repository:**
    ```bash
-   git clone https://github.com/YourUsername/cartify.git
+   git clone https://github.com/Hafizyishawu/cartify.git
    cd cartify
    ```
 
 2. **Create and activate a virtual environment (optional but recommended):**
    ```bash
-   python -m venv oxxi-env
-   source oxxi-env/bin/activate  # macOS/Linux
+   python -m venv cartify
+   source cartify/bin/activate  # macOS/Linux
    .\oxxi-env\Scripts\activate  # Windows
    ```
 
