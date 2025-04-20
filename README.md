@@ -113,7 +113,6 @@ cartify/
 ├── config.json (auto-generated)
 └── token.json (auto-generated)
 
----
 
 ## License
 
