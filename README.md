@@ -29,7 +29,7 @@ Cartify is a digital authorship and certification system for artists. It fingerp
    ```bash
    python -m venv cartify
    source cartify/bin/activate  # macOS/Linux
-   .\oxxi-env\Scripts\activate  # Windows
+   .\cartify\Scripts\activate  # Windows
    ```
 
 3. **Install dependencies:**
