@@ -117,3 +117,19 @@ MIT License — Free to use, modify, and distribute.
 
 ### Metadata Extraction Output
 ![Metadata Extraction](assets/metadata_extraction.png)
+
+---
+
+## Folder Structure Preview
+
+```bash
+cartify/
+├── cartify_watcher_final_v6.py
+├── drive_upload.py
+├── template/
+├── assets/
+├── config.json (auto-generated)
+└── token.json (auto-generated)
+```
+
+---
