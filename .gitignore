@@ -1,22 +1,18 @@
 
-# Byte-compiled / cache
+# Ignore compiled Python files
 __pycache__/
 *.py[cod]
-*$py.class
 
-# Logs
-*.log
-
-# Environment
+# Ignore environment files
 .env
-.venv
-env/
-venv/
+*.env
 
-# Certificates and Exports
-art_exports/exports/
-fingerprint_log.csv
-
-# Credentials
-credentials.json
+# Ignore local config and tokens
+config.json
 token.json
+
+# Ignore credentials (leave credentials.json if meant to guide user template)
+credentials.json
+
+# Ignore processed files
+processed_files.json
