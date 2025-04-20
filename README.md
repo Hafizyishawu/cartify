@@ -124,7 +124,7 @@ MIT License — Free to use, modify, and distribute.
 
 ```bash
 cartify/
-├── cartify_watcher_final_v6.py
+├── cartify_watcher_2.0.3.py
 ├── drive_upload.py
 ├── template/
 ├── assets/
