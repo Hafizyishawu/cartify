@@ -102,24 +102,9 @@ When a valid file is detected:
 
 ---
 
-## Folder Structure Preview
-
-```bash
-cartify/
-├── cartify_watcher_final_v6.py
-├── drive_upload.py
-├── template/
-├── assets/
-├── config.json (auto-generated)
-└── token.json (auto-generated)
-
----
-
 ## License
 
 MIT License — Free to use, modify, and distribute.
-
----
 
 ### Certificate Preview
 ![Certificate Preview](assets/certificate_preview.png)
