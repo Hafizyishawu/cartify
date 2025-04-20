@@ -113,10 +113,13 @@ cartify/
 ├── config.json (auto-generated)
 └── token.json (auto-generated)
 
+---
 
 ## License
 
 MIT License — Free to use, modify, and distribute.
+
+---
 
 ### Certificate Preview
 ![Certificate Preview](assets/certificate_preview.png)
