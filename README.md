@@ -49,6 +49,25 @@ When you run Cartify for the first time, it will:
 
 > Each time you drop a file prefixed with `CART_` (e.g., `CART_MyArtwork.jpg`), the app will trigger processing.
 
+
+---
+
+## Google Cloud Credentials Setup
+
+To enable Google Drive upload, you need to generate your own OAuth credentials from Google Cloud:
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/).
+2. Create a new project (or use an existing one).
+3. Navigate to **APIs & Services > Credentials**.
+4. Click **Create Credentials** > **OAuth client ID**.
+5. Choose **Desktop App** as the application type.
+6. Download the JSON file and save it as `credentials.json` in the Cartify root directory.
+
+> Do not share or commit your personal `credentials.json` to GitHub. Keep it private.
+
+A `credentials.example.json` file is provided in this repo as a template reference only
+
+
 ---
 
 ## Authentication for Google Drive
@@ -80,6 +99,19 @@ When a valid file is detected:
 - `config.json` and `token.json` are automatically created per user.
 - Keep your `credentials.json` safe and private (used to allow OAuth via Google Cloud).
 - Processed files are moved to the `originals` subfolder to prevent reprocessing.
+
+---
+
+## Folder Structure Preview
+
+```bash
+cartify/
+├── cartify_watcher_final_v6.py
+├── drive_upload.py
+├── template/
+├── assets/
+├── config.json (auto-generated)
+└── token.json (auto-generated)
 
 ---
 
