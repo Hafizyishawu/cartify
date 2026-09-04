@@ -22,3 +22,6 @@ cartify-push-token
 
 # Ignore macOS metadata
 .DS_Store
+
+# Ignore virtualenv
+venv/
