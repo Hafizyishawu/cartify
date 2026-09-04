@@ -16,3 +16,9 @@ credentials.json
 
 # Ignore processed files
 processed_files.json
+
+# Ignore push token
+cartify-push-token
+
+# Ignore macOS metadata
+.DS_Store
