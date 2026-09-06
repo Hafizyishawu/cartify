@@ -36,28 +36,40 @@ one.
 
 ## Transparency log core
 
-`certifiles/` holds the log primitives. Standard library only — nothing in
-`requirements.txt` is needed to run or test this part.
+`certifiles/` holds the log primitives.
 
 - `certifiles/merkle.py` — RFC 6962 tree hashing, inclusion and consistency proofs, and
   both verification routines. Consistency verification is what a witness runs before
-  cosigning a tree head.
+  cosigning a tree head. Standard library only.
 - `certifiles/record.py` — the record entered into the log, with canonical serialization.
   Identity is an opaque token and there is no self-asserted registration timestamp; both
-  are enforced in validation rather than left to convention.
+  are enforced in validation rather than left to convention. Standard library only.
+- `certifiles/checkpoint.py` — signed tree heads in the note format, plus the
+  distinct-witness quorum check from ADR 0001. Deliberately contains no cryptography, so
+  the wire format can be built and parsed anywhere. Standard library only.
+- `certifiles/signing.py` — Ed25519 behind the signer boundary. The in-process signer is
+  for development only; the production signer must call a KMS that never releases key
+  material. Requires `cryptography`.
 
 ```bash
 python3 -m unittest discover -s tests -t .
 ```
 
-Correctness is cross-validated over every index of every tree size up to 33 in both
-directions rather than against copied vectors, because the failure that matters is a
+The suite runs without any dependency installed; the signing tests skip. Install
+`cryptography` from `requirements.txt` to run them, and run them before showing a
+checkpoint to a prospective witness — they are what prove a checkpoint Certifiles emits
+is actually verifiable.
+
+Merkle correctness is cross-validated over every index of every tree size up to 33 in
+both directions rather than against copied vectors, because the failure that matters is a
 proof that verifies when it should not.
 
-Status: primitives only. There is no server, no signing key, no witness integration and
-no verifier CLI yet. RFC 6962's published test vectors should be added before any
-production record is issued — the current tests prove the implementation is
-self-consistent, not that it is byte-compatible with the specification.
+Status: primitives only. There is no server, no key custody, no witness integration and
+no verifier CLI yet. Two conformance gaps are open and both must close before a
+production record exists: RFC 6962's published test vectors are not yet asserted, and the
+checkpoint format follows the note and tlog-checkpoint conventions as understood here
+rather than as validated against the published C2SP specification. The current tests
+prove self-consistency, which is not the same as interoperability.
 
 ---
 

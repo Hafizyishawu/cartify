@@ -1,3 +1,4 @@
+cryptography==50.0.1
 fpdf==1.7.2
 google-api-python-client==2.167.0
 google-auth==2.39.0
