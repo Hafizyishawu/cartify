@@ -105,12 +105,35 @@ class Record:
         return record
 
     def leaf_data(self) -> bytes:
-        """Canonical bytes to be hashed into the log."""
+        """Canonical bytes to be hashed into the log.
+
+        Validates first. validate() being a separate function nothing called on
+        this path meant an invalid record could be canonicalised straight into
+        leaf bytes, which is the one place bad input must not reach.
+        """
+        validate(self)
         return canonicalize(self.to_dict())
 
 
 class RecordError(ValueError):
     """Rejected before it can reach the log."""
+
+
+def _require_text(value: object, field: str) -> str:
+    """A string that is genuinely a string and genuinely encodable.
+
+    A lone surrogate passes every pattern check and then raises
+    UnicodeEncodeError from canonicalize, which is an unhandled non-RecordError
+    on the write path. A non-string passes straight through json.dumps into the
+    log. Both are refused here instead.
+    """
+    if not isinstance(value, str):
+        raise RecordError(f"{field} must be a string")
+    try:
+        value.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        raise RecordError(f"{field} is not encodable as UTF-8") from exc
+    return value
 
 
 def validate(record: Record) -> None:
@@ -121,6 +144,25 @@ def validate(record: Record) -> None:
     """
     if record.schema_version != SCHEMA_VERSION:
         raise RecordError(f"unsupported schema_version {record.schema_version}")
+    for field_name, value in (
+        ("content.sha256", record.content.sha256),
+        ("content.media_type", record.content.media_type),
+        ("issuer.identity_id", record.issuer.identity_id),
+        ("issuer.key_id", record.issuer.key_id),
+    ):
+        _require_text(value, field_name)
+    if record.content.perceptual_hash is not None:
+        _require_text(record.content.perceptual_hash, "content.perceptual_hash")
+    if record.declared_created_at is not None:
+        _require_text(record.declared_created_at, "declared_created_at")
+    if not isinstance(record.content.size_bytes, int) or isinstance(
+        record.content.size_bytes, bool
+    ):
+        raise RecordError("content.size_bytes must be an integer")
+    if not isinstance(record.policy_version, int) or isinstance(
+        record.policy_version, bool
+    ):
+        raise RecordError("policy_version must be an integer")
     if not SHA256_PATTERN.match(record.content.sha256):
         raise RecordError("content.sha256 must be 64 lowercase hex characters")
     if record.content.size_bytes < 0:

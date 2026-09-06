@@ -14,12 +14,14 @@ from certifiles.checkpoint import (
     CheckpointError,
     Signature,
     SignedCheckpoint,
+    WitnessPolicy,
     add_signature,
     key_hash,
     meets_quorum,
     parse,
     sign,
-    verified_signers,
+    verified_witnesses,
+    verify_log_signature,
 )
 
 ORIGIN = "certifiles.com/log/2026"
@@ -148,8 +150,13 @@ class TestSignatureValidation(unittest.TestCase):
         # rather than propagating an exception to the quorum decision.
         signer = StubSigner("witness-a", b"\x11" * 32)
         signed = add_signature(SignedCheckpoint(checkpoint()), sign(checkpoint(), signer))
-        result = verified_signers(signed, {"witness a": b"\x11" * 32}, StubVerifier())
-        self.assertEqual(result, frozenset())
+        pol = WitnessPolicy(
+            log_key_name="certifiles.example/log",
+            log_public_key=b"\x99" * 32,
+            witnesses={"witness-b": b"\x22" * 32},
+            required=1,
+        )
+        self.assertEqual(verified_witnesses(signed, pol, StubVerifier()), frozenset())
 
 
 class TestRoundTrip(unittest.TestCase):
@@ -250,6 +257,58 @@ class TestStrictParsing(unittest.TestCase):
         with self.assertRaises(CheckpointError):
             parse(body + f"\n— witness-a {mangled}\n".encode())
 
+    def test_non_canonical_base64_is_rejected(self):
+        # validate=True only rejects out-of-alphabet characters; it still
+        # accepts a padded group whose ignored trailing bits are non-zero, so
+        # one checkpoint had four wire forms per base64 field. Same quorum,
+        # different digest, which defeats byte-comparison split-view detection.
+        alphabet = ("ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                    "abcdefghijklmnopqrstuvwxyz0123456789+/")
+        good = base64.b64encode(ROOT).decode()
+        tried = 0
+        for char in alphabet:
+            variant = good[:-2] + char + "="
+            if variant == good:
+                continue
+            try:
+                if base64.b64decode(variant, validate=True) != ROOT:
+                    continue
+            except Exception:
+                continue
+            tried += 1
+            data = self.valid_bytes().replace(good.encode(), variant.encode(), 1)
+            with self.subTest(variant=variant[-4:]):
+                self.assertNotEqual(data, self.valid_bytes())
+                with self.assertRaises(CheckpointError):
+                    parse(data)
+        self.assertGreater(tried, 0, "premise: alternative encodings exist")
+
+    def test_parse_then_serialize_is_byte_identical(self):
+        original = self.valid_bytes()
+        self.assertEqual(parse(original).serialize(), original)
+
+    def test_implausibly_long_size_raises_checkpoint_error(self):
+        # int() on a long digit string raises CPython's 4300-digit ValueError,
+        # so an endpoint mapping CheckpointError to 400 returned 500 instead.
+        for digits in (21, 5000, 100_000):
+            data = (b"log\n" + b"9" * digits + b"\n"
+                    + base64.b64encode(ROOT) + b"\n\n")
+            with self.subTest(digits=digits):
+                with self.assertRaises(CheckpointError):
+                    parse(data)
+
+    def test_extension_line_terminators_are_rejected(self):
+        # CR, VT, FF, NEL, LS, PS and FS end a line for str.splitlines() but not
+        # for a "\n" split, so an unconstrained extension lets two readers
+        # disagree about how many lines the signed body has.
+        for name, char in {
+            "CR": "\r", "VT": "\x0b", "FF": "\x0c", "NEL": "\x85",
+            "LS": "\u2028", "PS": "\u2029", "FS": "\x1c",
+        }.items():
+            with self.subTest(char=name):
+                with self.assertRaises(CheckpointError):
+                    Checkpoint(ORIGIN, 5, ROOT, extensions=(f"x{char}99",))
+
     def test_invalid_utf8_is_rejected(self):
         with self.assertRaises(CheckpointError):
             parse(b"\xff\xfe\n0\n" + base64.b64encode(ROOT) + b"\n\n")
@@ -259,77 +318,142 @@ class TestStrictParsing(unittest.TestCase):
             parse(b"origin\n12\n\n")
 
 
-class TestQuorum(unittest.TestCase):
-    def setUp(self):
-        self.keys = {
-            "witness-a": b"\x11" * 32,
-            "witness-b": b"\x22" * 32,
-        }
-        self.verifier = StubVerifier()
-        self.signed = SignedCheckpoint(checkpoint())
+LOG_KEY = b"\x99" * 32
+KEY_A = b"\x11" * 32
+KEY_B = b"\x22" * 32
 
-    def sign_with(self, name: str) -> None:
-        signer = StubSigner(name, self.keys[name])
-        self.signed = add_signature(self.signed, sign(checkpoint(), signer))
 
-    def test_valid_signature_counts(self):
-        self.sign_with("witness-a")
-        self.assertEqual(
-            verified_signers(self.signed, self.keys, self.verifier), {"witness-a"}
-        )
+def policy(required: int = 1, **overrides) -> WitnessPolicy:
+    fields = {
+        "log_key_name": "certifiles.example/log",
+        "log_public_key": LOG_KEY,
+        "witnesses": {"witness-a": KEY_A, "witness-b": KEY_B},
+        "required": required,
+    }
+    fields.update(overrides)
+    return WitnessPolicy(**fields)
 
-    def test_replayed_signature_counts_once(self):
-        # The attack this guards: duplicating one witness's line until the
-        # count reaches K. Quorum is distinct witnesses, not signature lines.
-        self.sign_with("witness-a")
-        duplicate = self.signed.signatures[0]
-        for _ in range(5):
-            self.signed = add_signature(self.signed, duplicate)
-        self.assertEqual(len(self.signed.signatures), 6)
-        self.assertEqual(
-            verified_signers(self.signed, self.keys, self.verifier), {"witness-a"}
-        )
-        self.assertFalse(meets_quorum(self.signed, self.keys, self.verifier, 2))
 
-    def test_two_distinct_witnesses_meet_quorum_of_two(self):
-        self.sign_with("witness-a")
-        self.sign_with("witness-b")
-        self.assertTrue(meets_quorum(self.signed, self.keys, self.verifier, 2))
+def signed_by(*names_and_keys) -> SignedCheckpoint:
+    result = SignedCheckpoint(checkpoint())
+    for name, key in names_and_keys:
+        result = add_signature(result, sign(checkpoint(), StubSigner(name, key)))
+    return result
 
-    def test_unknown_key_is_ignored_not_counted(self):
-        stranger = StubSigner("witness-z", b"\x33" * 32)
-        self.signed = add_signature(self.signed, sign(checkpoint(), stranger))
-        self.assertEqual(verified_signers(self.signed, self.keys, self.verifier), set())
 
-    def test_key_hash_mismatch_is_ignored(self):
-        # A signature claiming a known name but carrying another key's hash.
-        self.sign_with("witness-a")
-        tampered = Signature(
-            key_name="witness-a",
-            key_hash=key_hash("witness-b", self.keys["witness-b"]),
-            signature=self.signed.signatures[0].signature,
-        )
-        self.signed = SignedCheckpoint(checkpoint(), (tampered,))
-        self.assertEqual(verified_signers(self.signed, self.keys, self.verifier), set())
+class TestWitnessPolicy(unittest.TestCase):
+    """Regressions for the two quorum bypasses found by adversarial review."""
 
-    def test_invalid_signature_does_not_count(self):
-        self.sign_with("witness-a")
-        self.assertEqual(
-            verified_signers(self.signed, self.keys, StubVerifier(accept=False)), set()
-        )
+    def test_log_key_cannot_be_a_witness_key(self):
+        # The operator holds the log key. Counting it toward K meant one real
+        # witness satisfied the stage-2 gate that governs the paid tier.
+        with self.assertRaises(CheckpointError):
+            policy(witnesses={"witness-a": KEY_A, "sneaky": LOG_KEY})
 
-    def test_signature_over_a_different_checkpoint_does_not_count(self):
-        signer = StubSigner("witness-a", self.keys["witness-a"])
-        other = sign(checkpoint(size=999), signer)
-        self.signed = SignedCheckpoint(checkpoint(), (other,))
-        self.assertEqual(verified_signers(self.signed, self.keys, self.verifier), set())
+    def test_log_key_name_cannot_be_a_witness_name(self):
+        with self.assertRaises(CheckpointError):
+            policy(witnesses={"certifiles.example/log": KEY_A})
 
-    def test_quorum_of_zero_is_met_by_nothing(self):
-        self.assertTrue(meets_quorum(self.signed, self.keys, self.verifier, 0))
+    def test_one_key_under_two_names_is_rejected(self):
+        # Name is the operator-authored side of the mapping; key is identity.
+        with self.assertRaises(CheckpointError):
+            policy(witnesses={"witness-a": KEY_A, "witness-a-rotated": KEY_A})
+
+    def test_quorum_larger_than_the_witness_set_is_rejected(self):
+        with self.assertRaises(CheckpointError):
+            policy(required=3)
 
     def test_negative_quorum_is_rejected(self):
         with self.assertRaises(CheckpointError):
-            meets_quorum(self.signed, self.keys, self.verifier, -1)
+            policy(required=-1)
+
+    def test_valid_policy_constructs(self):
+        policy(required=2)
+
+    def test_counting_dedupes_by_key_even_if_the_policy_is_bypassed(self):
+        # verified_witnesses is documented as the second of two barriers. The
+        # policy constructor is the first and blocks this state, so reaching it
+        # requires forcing the field past __post_init__.
+        pol = policy(required=2)
+        object.__setattr__(pol, "witnesses", {"witness-a": KEY_A, "witness-a-rot": KEY_A})
+        signed = signed_by(("witness-a", KEY_A), ("witness-a-rot", KEY_A))
+        self.assertEqual(len(verified_witnesses(signed, pol, StubVerifier())), 1)
+
+
+class TestQuorum(unittest.TestCase):
+    def setUp(self):
+        self.verifier = StubVerifier()
+
+    def test_log_signature_alone_does_not_meet_quorum(self):
+        # The core regression: the log signing itself is not a witness.
+        signed = signed_by(("certifiles.example/log", LOG_KEY))
+        self.assertTrue(verify_log_signature(signed, policy(), self.verifier))
+        self.assertEqual(verified_witnesses(signed, policy(), self.verifier), frozenset())
+        self.assertFalse(meets_quorum(signed, policy(required=1), self.verifier))
+
+    def test_log_plus_one_witness_does_not_meet_k_of_two(self):
+        signed = signed_by(("certifiles.example/log", LOG_KEY), ("witness-a", KEY_A))
+        self.assertFalse(meets_quorum(signed, policy(required=2), self.verifier))
+
+    def test_log_plus_two_witnesses_meets_k_of_two(self):
+        signed = signed_by(
+            ("certifiles.example/log", LOG_KEY),
+            ("witness-a", KEY_A),
+            ("witness-b", KEY_B),
+        )
+        self.assertTrue(meets_quorum(signed, policy(required=2), self.verifier))
+
+    def test_witnesses_without_the_log_signature_do_not_meet_quorum(self):
+        # ADR 0001 requires the log's signature *plus* K witnesses.
+        signed = signed_by(("witness-a", KEY_A), ("witness-b", KEY_B))
+        self.assertFalse(meets_quorum(signed, policy(required=2), self.verifier))
+
+    def test_replayed_witness_signature_counts_once(self):
+        signed = signed_by(("certifiles.example/log", LOG_KEY), ("witness-a", KEY_A))
+        duplicate = signed.signatures[-1]
+        for _ in range(5):
+            signed = add_signature(signed, duplicate)
+        self.assertEqual(
+            verified_witnesses(signed, policy(), self.verifier), {"witness-a"}
+        )
+        self.assertFalse(meets_quorum(signed, policy(required=2), self.verifier))
+
+    def test_unknown_key_is_ignored(self):
+        signed = signed_by(
+            ("certifiles.example/log", LOG_KEY), ("witness-z", b"\x33" * 32)
+        )
+        self.assertEqual(verified_witnesses(signed, policy(), self.verifier), frozenset())
+
+    def test_key_hash_mismatch_is_ignored(self):
+        signed = signed_by(("witness-a", KEY_A))
+        tampered = Signature(
+            key_name="witness-a",
+            key_hash=key_hash("witness-b", KEY_B),
+            signature=signed.signatures[0].signature,
+        )
+        self.assertEqual(
+            verified_witnesses(SignedCheckpoint(checkpoint(), (tampered,)),
+                               policy(), self.verifier),
+            frozenset(),
+        )
+
+    def test_invalid_signature_does_not_count(self):
+        signed = signed_by(("witness-a", KEY_A))
+        self.assertEqual(
+            verified_witnesses(signed, policy(), StubVerifier(accept=False)), frozenset()
+        )
+
+    def test_signature_over_a_different_checkpoint_does_not_count(self):
+        other = sign(checkpoint(size=999), StubSigner("witness-a", KEY_A))
+        signed = SignedCheckpoint(checkpoint(), (other,))
+        self.assertEqual(verified_witnesses(signed, policy(), self.verifier), frozenset())
+
+    def test_stage_zero_needs_the_log_signature_but_no_witnesses(self):
+        # ADR 0001 stage 0: K=0 is legitimate, but the log must still sign.
+        stage0 = policy(required=0, witnesses={})
+        self.assertFalse(meets_quorum(SignedCheckpoint(checkpoint()), stage0, self.verifier))
+        signed = signed_by(("certifiles.example/log", LOG_KEY))
+        self.assertTrue(meets_quorum(signed, stage0, self.verifier))
 
 
 if __name__ == "__main__":

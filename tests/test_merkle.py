@@ -13,6 +13,7 @@ import hashlib
 import unittest
 
 from certifiles.merkle import (
+    EMPTY_ROOT,
     consistency_proof,
     inclusion_proof,
     leaf_hash,
@@ -235,6 +236,85 @@ class TestConsistency(unittest.TestCase):
                 9, 16, proof, leaf_hash(b"not the old root"), root_hash(leaves)
             )
         )
+
+
+class TestAdversarialFindings(unittest.TestCase):
+    """Regressions for defects found by adversarial review."""
+
+    def test_negative_index_is_rejected(self):
+        # Python's -1 % 2 == 1 makes a negative index walk the all-right-siblings
+        # path, aliasing the last index whenever it is all ones in binary. The
+        # function returned True for a false statement, and -1 is a live
+        # subscript, so a caller indexing on it silently read the last entry.
+        for size in (1, 2, 4, 8, 16):
+            leaves = leaves_for(size)
+            root = root_hash(leaves)
+            proof = inclusion_proof(leaves, size - 1)
+            with self.subTest(size=size):
+                self.assertTrue(verify_inclusion(leaves[size - 1], size - 1, size, proof, root))
+                self.assertFalse(verify_inclusion(leaves[size - 1], -1, size, proof, root))
+
+    def test_proof_length_is_bound_to_tree_size(self):
+        # Catches a size claim whose proof depth differs from the proof given.
+        leaves = leaves_for(8)
+        root = root_hash(leaves)
+        proof = inclusion_proof(leaves, 0)
+        for wrong_size in (2, 4, 16, 24):
+            with self.subTest(size=wrong_size):
+                self.assertFalse(verify_inclusion(leaves[0], 0, wrong_size, proof, root))
+
+    def test_equal_depth_size_confusion_is_a_documented_residual(self):
+        # Honest limit, not a passing property. Index 0 of a size-3 tree and of
+        # a size-4 tree walk an identical path, so no length check can separate
+        # them, and tree_size is therefore not a binding parameter on its own.
+        # This is not exploitable: a foreign leaf is never accepted, and a
+        # verifier receives size and root together from one signed checkpoint,
+        # so an attacker cannot vary them independently.
+        leaves = leaves_for(3)
+        root = root_hash(leaves)
+        proof = inclusion_proof(leaves, 0)
+        self.assertTrue(verify_inclusion(leaves[0], 0, 3, proof, root))
+        self.assertTrue(verify_inclusion(leaves[0], 0, 4, proof, root))
+        # What must never happen, and does not:
+        self.assertFalse(verify_inclusion(leaf_hash(b"FOREIGN"), 0, 4, proof, root))
+
+    def test_verifiers_return_false_rather_than_raising(self):
+        # The docstring promise is what makes a caller skip its own guard, and
+        # a proof arriving over JSON is exactly a list of hex strings.
+        leaves = leaves_for(8)
+        root = root_hash(leaves)
+        good = inclusion_proof(leaves, 3)
+        hex_proof = [n.hex() for n in good]
+        for case, args in {
+            "str proof nodes": (leaves[3], 3, 8, hex_proof, root),
+            "str leaf": (leaves[3].hex(), 3, 8, good, root),
+            "int proof nodes": (leaves[3], 3, 8, [1, 2, 3], root),
+            "non-iterable proof": (leaves[3], 3, 8, None, root),
+            "str index": (leaves[3], "3", 8, good, root),
+            "bool index": (leaves[3], True, 8, good, root),
+            "str root": (leaves[3], 3, 8, good, root.hex()),
+        }.items():
+            with self.subTest(case=case):
+                self.assertFalse(verify_inclusion(*args))
+
+        for case, args in {
+            "str proof nodes": (4, 8, [n.hex() for n in consistency_proof(leaves, 4)],
+                                root_hash(leaves[:4]), root),
+            "str old root": (4, 8, consistency_proof(leaves, 4),
+                             root_hash(leaves[:4]).hex(), root),
+            "non-iterable proof": (4, 8, None, root_hash(leaves[:4]), root),
+        }.items():
+            with self.subTest(case=f"consistency {case}"):
+                self.assertFalse(verify_consistency(*args))
+
+    def test_empty_old_tree_requires_the_empty_root(self):
+        # A witness bootstrapping from zero got the same True for "verified"
+        # and "checked nothing", so it would cosign any root offered.
+        leaves = leaves_for(9)
+        new_root = root_hash(leaves)
+        self.assertTrue(verify_consistency(0, 9, [], EMPTY_ROOT, new_root))
+        self.assertFalse(verify_consistency(0, 9, [], b"\x42" * 32, new_root))
+        self.assertFalse(verify_consistency(0, 9, [], bytes(32), new_root))
 
 
 if __name__ == "__main__":

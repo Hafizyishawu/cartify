@@ -19,6 +19,31 @@ LEAF_PREFIX = b"\x00"
 NODE_PREFIX = b"\x01"
 
 HASH_SIZE = hashlib.sha256().digest_size
+EMPTY_ROOT = hashlib.sha256(b"").digest()
+
+
+def _is_hash(value: object) -> bool:
+    return isinstance(value, (bytes, bytearray)) and len(value) == HASH_SIZE
+
+
+def _is_index(value: object) -> bool:
+    # bool is an int subclass; accepting True as index 1 would let a type
+    # confusion upstream become a silent off-by-one here.
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def _inclusion_proof_length(index: int, size: int) -> int:
+    """Number of nodes a well-formed inclusion proof must have.
+
+    Binding the proof to the tree size means a proof cannot be presented
+    against a size it was not issued for.
+    """
+    if size == 1:
+        return 0
+    k = _split_point(size)
+    if index < k:
+        return 1 + _inclusion_proof_length(index, k)
+    return 1 + _inclusion_proof_length(index - k, size - k)
 
 
 def leaf_hash(data: bytes) -> bytes:
@@ -92,10 +117,25 @@ def verify_inclusion(
     Returns False rather than raising on malformed input. Callers are verifying
     untrusted data, and an exception path is a place to forget a check.
     """
-    if index >= tree_size or tree_size < 1:
+    if not _is_index(index) or not _is_index(tree_size):
         return False
-    if any(len(node) != HASH_SIZE for node in proof):
+    # A negative index is not merely out of range: Python's -1 % 2 == 1 makes it
+    # walk the all-right-siblings path, so it aliases the last index whenever
+    # that index is all ones in binary, and the function would return True for a
+    # false statement.
+    if tree_size < 1 or not 0 <= index < tree_size:
         return False
+    if not _is_hash(leaf) or not _is_hash(root):
+        return False
+    try:
+        nodes = list(proof)
+    except TypeError:
+        return False
+    if not all(_is_hash(node) for node in nodes):
+        return False
+    if len(nodes) != _inclusion_proof_length(index, tree_size):
+        return False
+    proof = nodes
 
     node_index = index
     last_index = tree_size - 1
@@ -129,14 +169,28 @@ def verify_consistency(
     A False here is the `COMPROMISED` verifier outcome in ADR 0001: it is
     evidence the log forked or rewrote history, not a transient error.
     """
-    if old_size > new_size or old_size < 0:
+    if not _is_index(old_size) or not _is_index(new_size):
+        return False
+    if not _is_hash(old_root) or not _is_hash(new_root):
+        return False
+    if old_size < 0 or new_size < 0 or old_size > new_size:
+        return False
+    try:
+        nodes = list(proof)
+    except TypeError:
+        return False
+    if not all(_is_hash(node) for node in nodes):
         return False
     if old_size == new_size:
-        return not proof and old_root == new_root
+        return not nodes and old_root == new_root
     if old_size == 0:
-        return not proof
-    if any(len(node) != HASH_SIZE for node in proof):
-        return False
+        # An empty prefix is consistent with any tree, but only if the caller's
+        # old_root really is the empty-tree root. Returning True for an
+        # arbitrary old_root would give a witness bootstrapping from zero the
+        # same answer for "verified" and "checked nothing", and it would cosign
+        # whatever the operator offered.
+        return not nodes and old_root == EMPTY_ROOT
+    proof = nodes
 
     node_index = old_size - 1
     last_index = new_size - 1

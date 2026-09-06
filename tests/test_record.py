@@ -188,5 +188,40 @@ class TestValidation(unittest.TestCase):
         self.assertNotIn("timestamp", keys)
 
 
+class TestAdversarialFindings(unittest.TestCase):
+    """Regressions for defects found by adversarial review."""
+
+    def test_leaf_data_validates(self):
+        # validate() was a separate function nothing on the write path called,
+        # so an invalid record canonicalised straight into leaf bytes.
+        invalid = sample(content=Content(sha256="NOT A HASH", media_type="", size_bytes=-5))
+        with self.assertRaises(RecordError):
+            invalid.leaf_data()
+
+    def test_unpaired_surrogate_is_refused_not_crashed(self):
+        # Passed every pattern check, then raised UnicodeEncodeError from
+        # canonicalize — an unhandled non-RecordError on the write path.
+        bad = sample(content=Content(VALID_SHA, "image/\ud800", 10))
+        with self.assertRaises(RecordError):
+            validate(bad)
+        with self.assertRaises(RecordError):
+            bad.leaf_data()
+
+    def test_non_string_fields_are_rejected(self):
+        for case, record in {
+            "int media_type": sample(content=Content(VALID_SHA, 7, 10)),
+            "int sha256": sample(content=Content(7, "image/png", 10)),
+            "int key_id": sample(issuer=Issuer(VALID_ID, AssuranceLevel.EMAIL, 7)),
+            "int identity_id": sample(issuer=Issuer(7, AssuranceLevel.EMAIL, "k")),
+        }.items():
+            with self.subTest(case=case):
+                with self.assertRaises(RecordError):
+                    validate(record)
+
+    def test_bool_is_not_an_integer_size(self):
+        with self.assertRaises(RecordError):
+            validate(sample(content=Content(VALID_SHA, "image/png", True)))
+
+
 if __name__ == "__main__":
     unittest.main()

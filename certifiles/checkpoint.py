@@ -34,6 +34,7 @@ import base64
 import hashlib
 import re
 from dataclasses import dataclass, field
+from collections.abc import Mapping
 from typing import Protocol, Sequence
 
 ED25519_ALGORITHM = 0x01
@@ -44,8 +45,14 @@ ED25519_SIGNATURE_SIZE = 64
 ROOT_HASH_SIZE = 32
 
 ORIGIN_PATTERN = re.compile(r"\A[\x21-\x7e][\x20-\x7e]*\Z")
+EXTENSION_PATTERN = re.compile(r"\A[\x21-\x7e][\x20-\x7e]*\Z")
 KEY_NAME_PATTERN = re.compile(r"\A[\x21-\x7e]+\Z")
 SIZE_PATTERN = re.compile(r"\A(0|[1-9][0-9]*)\Z")
+# A tree size cannot plausibly exceed 20 digits. Without a bound, int() on a
+# long digit string raises CPython's 4300-digit ValueError rather than a
+# CheckpointError, so an endpoint mapping CheckpointError to 400 returns 500
+# instead - the verification denial of service named in threat model T5.
+MAX_SIZE_DIGITS = 20
 
 
 class CheckpointError(ValueError):
@@ -109,8 +116,14 @@ class Checkpoint:
         if len(self.root_hash) != ROOT_HASH_SIZE:
             raise CheckpointError(f"root hash must be {ROOT_HASH_SIZE} bytes")
         for line in self.extensions:
-            if not line or "\n" in line:
-                raise CheckpointError("extension lines must be non-empty and single-line")
+            # CR, VT, FF, NEL, LS, PS and FS all terminate a line for
+            # str.splitlines() but not for a "\n"-only split, so an unconstrained
+            # extension lets two readers disagree about how many lines the signed
+            # body has. Same character class as origin closes that.
+            if not EXTENSION_PATTERN.match(line):
+                raise CheckpointError(
+                    "extension lines must be non-empty printable ASCII"
+                )
 
     def body(self) -> bytes:
         """The exact bytes a signature covers."""
@@ -199,13 +212,19 @@ def parse(data: bytes) -> SignedCheckpoint:
         raise CheckpointError("body must have origin, size and root hash")
 
     origin, size_line, root_line, *extensions = body_lines
+    if len(size_line) > MAX_SIZE_DIGITS:
+        raise CheckpointError("size has implausibly many digits")
     if not SIZE_PATTERN.match(size_line):
         raise CheckpointError("size must be a canonical decimal integer")
+    try:
+        size = int(size_line)
+    except ValueError as exc:
+        raise CheckpointError("size is not an integer") from exc
     root_hash = _decode_base64(root_line, ROOT_HASH_SIZE, "root hash")
 
     checkpoint = Checkpoint(
         origin=origin,
-        size=int(size_line),
+        size=size,
         root_hash=root_hash,
         extensions=tuple(extensions),
     )
@@ -241,30 +260,68 @@ def _decode_base64(value: str, expected_length: int, what: str) -> bytes:
         raise CheckpointError(f"{what} is not valid base64") from exc
     if len(raw) != expected_length:
         raise CheckpointError(f"{what} must decode to {expected_length} bytes")
+    # validate=True only rejects characters outside the alphabet. It still
+    # accepts a padded group whose ignored trailing bits are non-zero, so
+    # several encodings decode to identical bytes. That would give one
+    # checkpoint multiple valid wire forms with the same quorum but different
+    # digests, defeating any split-view detection that compares checkpoint
+    # bytes. Re-encoding and comparing forces exactly one representation.
+    if base64.b64encode(raw).decode("ascii") != value:
+        raise CheckpointError(f"{what} is not canonically encoded")
     return raw
 
 
-def verified_signers(
-    signed: SignedCheckpoint,
-    known_keys: dict[str, bytes],
-    verifier: SignatureVerifier,
-) -> frozenset[str]:
-    """Names of known keys whose signature over this checkpoint is valid.
+@dataclass(frozen=True, slots=True)
+class WitnessPolicy:
+    """ADR 0001's quorum rule, as a type that cannot express a bypass.
 
-    Returns a set, so a replayed signature line cannot be counted twice. That
-    matters directly: quorum in ADR 0001 is a count of *distinct* witnesses,
-    and a duplicate-tolerant count would let one cosignature satisfy K on its
-    own.
+    Two mistakes are made structurally impossible here rather than left to the
+    caller to avoid. Both were live defects while the witness set was a flat
+    name-to-key mapping:
 
-    A signature from an unknown key, or one whose key hash does not match the
-    name it claims, is treated as absent rather than as an error — the policy
-    question is whether K distinct known witnesses signed, not whether a
-    stranger also did.
+    - The log's own key could be counted toward K. The operator holds that key,
+      and the operator is the attacker this whole design exists to constrain,
+      so K=2 was satisfiable with a single real witness.
+    - One key registered under two names counted as two witnesses, because the
+      unit of identity was the name — the side of the mapping the operator
+      authors — rather than the key.
     """
+
+    log_key_name: str
+    log_public_key: bytes
+    witnesses: Mapping[str, bytes]
+    required: int
+
+    def __post_init__(self) -> None:
+        if self.required < 0:
+            raise CheckpointError("required quorum must not be negative")
+        if self.required > len(self.witnesses):
+            raise CheckpointError(
+                "required quorum exceeds the number of witnesses in the policy"
+            )
+        key_hash(self.log_key_name, self.log_public_key)
+        keys = [bytes(k) for k in self.witnesses.values()]
+        if len(set(keys)) != len(keys):
+            raise CheckpointError(
+                "witness set contains one public key under more than one name"
+            )
+        if bytes(self.log_public_key) in set(keys):
+            raise CheckpointError("the log key must not also be a witness key")
+        if self.log_key_name in self.witnesses:
+            raise CheckpointError("the log key name must not also be a witness name")
+        for name, key in self.witnesses.items():
+            key_hash(name, key)
+
+
+def _verified_pairs(
+    signed: SignedCheckpoint,
+    keys: Mapping[str, bytes],
+    verifier: SignatureVerifier,
+) -> set[tuple[str, bytes]]:
     body = signed.checkpoint.body()
-    verified: set[str] = set()
+    verified: set[tuple[str, bytes]] = set()
     for signature in signed.signatures:
-        public_key = known_keys.get(signature.key_name)
+        public_key = keys.get(signature.key_name)
         if public_key is None:
             continue
         try:
@@ -277,21 +334,55 @@ def verified_signers(
         if signature.key_hash != expected:
             continue
         if verifier.verify(public_key, body, signature.signature):
-            verified.add(signature.key_name)
-    return frozenset(verified)
+            verified.add((signature.key_name, bytes(public_key)))
+    return verified
+
+
+def verify_log_signature(
+    signed: SignedCheckpoint, policy: WitnessPolicy, verifier: SignatureVerifier
+) -> bool:
+    """Whether the log itself signed this checkpoint.
+
+    Deliberately separate from the witness count, and its result is never a
+    member of that count.
+    """
+    return bool(
+        _verified_pairs(
+            signed, {policy.log_key_name: policy.log_public_key}, verifier
+        )
+    )
+
+
+def verified_witnesses(
+    signed: SignedCheckpoint, policy: WitnessPolicy, verifier: SignatureVerifier
+) -> frozenset[str]:
+    """Distinct witnesses whose signature over this checkpoint is valid.
+
+    Deduplicated by public key, not by name: quorum in ADR 0001 counts distinct
+    independent entities, and one key answering to two names is one entity. The
+    policy already rejects a duplicated key, so this is the second of two
+    barriers rather than the only one.
+
+    A signature from a key outside the policy, or one whose key hash does not
+    match the name it claims, is treated as absent rather than as an error. The
+    question is whether K known witnesses signed, not whether a stranger also
+    did.
+    """
+    by_key: dict[bytes, str] = {}
+    for name, key in _verified_pairs(signed, policy.witnesses, verifier):
+        by_key.setdefault(key, name)
+    return frozenset(by_key.values())
 
 
 def meets_quorum(
-    signed: SignedCheckpoint,
-    known_keys: dict[str, bytes],
-    verifier: SignatureVerifier,
-    required: int,
+    signed: SignedCheckpoint, policy: WitnessPolicy, verifier: SignatureVerifier
 ) -> bool:
-    """Whether at least `required` distinct known witnesses signed."""
-    if required < 0:
-        raise CheckpointError("required quorum must not be negative")
-    return len(verified_signers(signed, known_keys, verifier)) >= required
+    """ADR 0001: the log's own signature plus at least K distinct witnesses."""
+    if not verify_log_signature(signed, policy, verifier):
+        return False
+    return len(verified_witnesses(signed, policy, verifier)) >= policy.required
 
 
-def known_key_names(signed: SignedCheckpoint) -> Sequence[str]:
+def signature_key_names(signed: SignedCheckpoint) -> Sequence[str]:
+    """Names claimed by the signature lines. Claimed, not verified."""
     return tuple(s.key_name for s in signed.signatures)

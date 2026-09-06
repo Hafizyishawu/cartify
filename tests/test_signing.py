@@ -11,11 +11,12 @@ import unittest
 from certifiles.checkpoint import (
     Checkpoint,
     SignedCheckpoint,
+    WitnessPolicy,
     add_signature,
     meets_quorum,
     parse,
     sign,
-    verified_signers,
+    verified_witnesses,
 )
 
 try:
@@ -44,10 +45,16 @@ class TestEd25519(unittest.TestCase):
         self.signer = InMemoryEd25519Signer.from_seed("witness-a", b"\x01" * 32)
         self.other = InMemoryEd25519Signer.from_seed("witness-b", b"\x02" * 32)
         self.verifier = Ed25519Verifier()
-        self.keys = {
-            "witness-a": self.signer.public_key,
-            "witness-b": self.other.public_key,
-        }
+        self.log = InMemoryEd25519Signer.from_seed("example/log", b"\x09" * 32)
+        self.policy = WitnessPolicy(
+            log_key_name="example/log",
+            log_public_key=self.log.public_key,
+            witnesses={
+                "witness-a": self.signer.public_key,
+                "witness-b": self.other.public_key,
+            },
+            required=2,
+        )
 
     def test_public_key_is_32_raw_bytes(self):
         self.assertEqual(len(self.signer.public_key), 32)
@@ -55,39 +62,45 @@ class TestEd25519(unittest.TestCase):
     def test_signature_verifies(self):
         signed = add_signature(SignedCheckpoint(checkpoint()), sign(checkpoint(), self.signer))
         self.assertEqual(
-            verified_signers(signed, self.keys, self.verifier), {"witness-a"}
+            verified_witnesses(signed, self.policy, self.verifier), {"witness-a"}
         )
 
     def test_signature_survives_serialization(self):
         signed = add_signature(SignedCheckpoint(checkpoint()), sign(checkpoint(), self.signer))
         reparsed = parse(signed.serialize())
         self.assertEqual(
-            verified_signers(reparsed, self.keys, self.verifier), {"witness-a"}
+            verified_witnesses(reparsed, self.policy, self.verifier), {"witness-a"}
         )
 
     def test_two_witnesses_meet_quorum_of_two(self):
         signed = SignedCheckpoint(checkpoint())
+        signed = add_signature(signed, sign(checkpoint(), self.log))
         signed = add_signature(signed, sign(checkpoint(), self.signer))
         signed = add_signature(signed, sign(checkpoint(), self.other))
-        self.assertTrue(meets_quorum(signed, self.keys, self.verifier, 2))
+        self.assertTrue(meets_quorum(signed, self.policy, self.verifier))
 
     def test_tampered_body_fails_verification(self):
         signature = sign(checkpoint(), self.signer)
         forged = SignedCheckpoint(checkpoint(size=813), (signature,))
-        self.assertEqual(verified_signers(forged, self.keys, self.verifier), set())
+        self.assertEqual(verified_witnesses(forged, self.policy, self.verifier), set())
 
     def test_tampered_root_fails_verification(self):
         signature = sign(checkpoint(), self.signer)
         forged = SignedCheckpoint(checkpoint(root_hash=bytes(32)), (signature,))
-        self.assertEqual(verified_signers(forged, self.keys, self.verifier), set())
+        self.assertEqual(verified_witnesses(forged, self.policy, self.verifier), set())
+
+    def test_log_signature_does_not_count_as_a_witness(self):
+        signed = add_signature(SignedCheckpoint(checkpoint()), sign(checkpoint(), self.log))
+        self.assertEqual(verified_witnesses(signed, self.policy, self.verifier), frozenset())
+        self.assertFalse(meets_quorum(signed, self.policy, self.verifier))
 
     def test_signature_from_wrong_key_fails(self):
         signature = sign(checkpoint(), self.other)
         mislabelled = SignedCheckpoint(checkpoint(), (signature,))
         self.assertEqual(
-            verified_signers(mislabelled, self.keys, self.verifier), {"witness-b"}
+            verified_witnesses(mislabelled, self.policy, self.verifier), {"witness-b"}
         )
-        self.assertNotIn("witness-a", verified_signers(mislabelled, self.keys, self.verifier))
+        self.assertNotIn("witness-a", verified_witnesses(mislabelled, self.policy, self.verifier))
 
     def test_seed_determines_key(self):
         again = InMemoryEd25519Signer.from_seed("witness-a", b"\x01" * 32)
