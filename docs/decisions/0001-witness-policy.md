@@ -16,7 +16,7 @@ the policy changes over time, and what a verifier does when the policy is not sa
 
 The policy must be defined before the first production record exists. Records written
 before a policy is in force cannot be retroactively covered by one, and a system that
-cannot state its assurance at time of issue cannot report assurance honestly later.
+cannot state its assurance at time of issue cannot report assurance honestly
 
 ## Decision
 
