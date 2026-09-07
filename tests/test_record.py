@@ -10,6 +10,7 @@ import json
 import unittest
 
 from certifiles.merkle import leaf_hash
+from certifiles.fingerprint import Fingerprint, FingerprintKind
 from certifiles.record import (
     AssuranceLevel,
     ClaimType,
@@ -99,13 +100,16 @@ class TestFieldSensitivity(unittest.TestCase):
             "size_bytes": sample(
                 content=Content(sha256=VALID_SHA, media_type="image/png", size_bytes=1025)
             ),
-            "perceptual_hash": sample(
+            "fingerprints": sample(
                 content=Content(
                     sha256=VALID_SHA,
                     media_type="image/png",
                     size_bytes=1024,
-                    perceptual_hash="ff00ff00",
+                    fingerprints=(Fingerprint(FingerprintKind.PHASH, "c3a90f7e21b45d80"),),
                 )
+            ),
+            "quality": sample(
+                content=Content(VALID_SHA, "image/png", 1024, (), 61)
             ),
             "assurance_level": sample(
                 issuer=Issuer(VALID_ID, AssuranceLevel.DOMAIN, "key-2026-09")
@@ -121,6 +125,27 @@ class TestFieldSensitivity(unittest.TestCase):
         for name, variant in variants.items():
             with self.subTest(field=name):
                 self.assertNotEqual(base, leaf_hash(variant.leaf_data()))
+
+    def test_fingerprint_order_does_not_change_the_leaf(self):
+        # Keyed by algorithm, so two clients listing them differently produce
+        # identical bytes and identical proofs.
+        a = Fingerprint(FingerprintKind.PHASH, "c3a90f7e21b45d80")
+        b = Fingerprint(FingerprintKind.DHASH, "9e2b17c0da45f381")
+        first = sample(content=Content(VALID_SHA, "image/png", 10, (a, b), 80))
+        second = sample(content=Content(VALID_SHA, "image/png", 10, (b, a), 80))
+        self.assertEqual(first.leaf_data(), second.leaf_data())
+
+    def test_duplicate_fingerprint_kinds_are_rejected(self):
+        a = Fingerprint(FingerprintKind.PHASH, "c3a90f7e21b45d80")
+        b = Fingerprint(FingerprintKind.PHASH, "0000000000000000")
+        with self.assertRaises(RecordError):
+            validate(sample(content=Content(VALID_SHA, "image/png", 10, (a, b), 80)))
+
+    def test_out_of_range_quality_is_rejected(self):
+        for bad in (-1, 101, True):
+            with self.subTest(quality=bad):
+                with self.assertRaises(RecordError):
+                    validate(sample(content=Content(VALID_SHA, "image/png", 10, (), bad)))
 
     def test_omitted_optional_field_differs_from_empty_string(self):
         with_none = sample().leaf_data()
