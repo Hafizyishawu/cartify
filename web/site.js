@@ -15,6 +15,7 @@ const PAGES = [
 const STUDIO_PAGES = [
   { href: "./studio.html", label: "Monitoring" },
   { href: "./register-work.html", label: "Register a work" },
+  { href: "./settings.html", label: "Settings" },
 ];
 
 export function renderNav(currentHref, signedIn = false) {

@@ -177,3 +177,24 @@ td{padding:12px 8px 12px 0;border-bottom:1px solid var(--rule)}
 .dropzone{border:1.5px dashed var(--rule-firm);border-radius:3px;padding:28px 16px;
           text-align:center;background:var(--surface);cursor:pointer}
 .dropzone:hover{border-color:var(--accent);background:var(--accent-soft)}
+
+/* ---- assurance ladder ---------------------------------------------------- */
+.ladder{display:grid;gap:1px;background:var(--rule);border:1px solid var(--rule);
+        border-radius:3px;overflow:hidden;margin:0 0 28px}
+.rung{background:var(--surface);padding:14px 16px;display:grid;
+      grid-template-columns:14px minmax(0,1fr);gap:12px;align-items:start}
+.rung .pip{width:9px;height:9px;border-radius:50%;margin-top:5px;
+           border:1px solid var(--rule-firm);background:transparent}
+.rung.held .pip{background:var(--proven);border-color:var(--proven)}
+.rung.now .pip{background:var(--accent);border-color:var(--accent);
+               box-shadow:0 0 0 3px var(--accent-soft)}
+.rung h3{margin:0;font-size:14px;font-weight:600;display:flex;gap:10px;
+         align-items:baseline;flex-wrap:wrap}
+.rung .tag{font-family:var(--mono);font-size:10px;letter-spacing:.12em;
+           text-transform:uppercase;color:var(--faint);font-weight:400}
+.rung.held .tag{color:var(--proven)}
+.rung.now .tag{color:var(--accent)}
+.rung p{margin:4px 0 0;font-size:13px;color:var(--muted);max-width:62ch}
+.copyable{display:flex;gap:8px;align-items:flex-start;margin:0 0 14px}
+.copyable .secret{flex:1;margin:0}
+.copyable button{width:auto;flex:none;padding:8px 12px;font-size:12px}
