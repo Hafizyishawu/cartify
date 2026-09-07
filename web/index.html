@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Verify a file — Certifiles</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    --paper:#F4F5F3; --surface:#FFF; --surface-2:#ECEEEA; --ink:#14171A;
+    --muted:#5A6069; --faint:#83898F; --rule:#DDDFDA; --rule-firm:#C4C8C2;
+    --accent:#1F5560; --accent-soft:#E3EDEE;
+    --proven:#2F6B4F; --partial:#8A6516; --pending:#6B6257;
+    --unknown:#6E747C; --invalid:#A3312B; --compromised:#6D1614;
+    --ui:"Archivo","Helvetica Neue",Arial,sans-serif;
+    --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:#101314; --surface:#171A1C; --surface-2:#1E2224; --ink:#E8EAE7;
+      --muted:#9BA2A6; --faint:#767D82; --rule:#2A2F31; --rule-firm:#3A4043;
+      --accent:#6FB3BF; --accent-soft:#17292D;
+      --proven:#5FA383; --partial:#C79A3E; --pending:#9A9086;
+      --unknown:#939AA0; --invalid:#D9695F; --compromised:#B84A42;
+    }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--ui);
+       font-size:15px;line-height:1.55;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:760px;margin:0 auto;padding:40px 24px 80px}
+  .bar{display:flex;align-items:center;gap:24px;border-bottom:1px solid var(--rule);
+       padding-bottom:12px;margin-bottom:36px;flex-wrap:wrap}
+  .mark{font-weight:700;font-size:16px;letter-spacing:-.01em}
+  .mark span{color:var(--accent)}
+  nav{display:flex;gap:16px;font-size:13px;color:var(--muted)}
+  nav .on{color:var(--ink);font-weight:500;box-shadow:inset 0 -2px 0 var(--accent)}
+  h1{font-size:26px;font-weight:600;letter-spacing:-.015em;margin:0 0 8px;text-wrap:balance}
+  .lede{color:var(--muted);margin:0 0 28px;max-width:60ch;font-size:14px}
+  .drop{border:1.5px dashed var(--rule-firm);border-radius:3px;padding:40px 16px;
+        text-align:center;background:var(--surface);cursor:pointer;transition:border-color .15s}
+  .drop:hover,.drop.over{border-color:var(--accent);background:var(--accent-soft)}
+  .drop:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  .drop-lead{font-size:16px;font-weight:500}
+  .drop-sub{font-size:13px;color:var(--muted);margin-top:4px}
+  .privacy{display:inline-flex;gap:8px;margin-top:16px;font-family:var(--mono);
+           font-size:11.5px;color:var(--accent);background:var(--accent-soft);
+           border-radius:2px;padding:4px 8px}
+  .or{display:flex;align-items:center;gap:12px;margin:16px 0;color:var(--faint);font-size:12px}
+  .or::before,.or::after{content:"";height:1px;background:var(--rule);flex:1}
+  form{display:flex;gap:8px}
+  input{flex:1;border:1px solid var(--rule-firm);border-radius:3px;padding:8px 12px;
+        font-family:var(--mono);font-size:12.5px;background:var(--surface);color:var(--ink)}
+  input:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+  button{border:1px solid var(--accent);background:var(--accent);color:var(--paper);
+         border-radius:3px;padding:8px 16px;font-family:var(--ui);font-size:13px;
+         font-weight:500;cursor:pointer}
+  button:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+  .result{border:1px solid var(--rule);border-radius:3px;background:var(--surface);
+          display:flex;overflow:hidden;margin-top:28px}
+  .rail{width:3px;flex:none}
+  .inner{padding:16px;flex:1;min-width:0}
+  .state{font-family:var(--mono);font-size:11px;letter-spacing:.12em;
+         text-transform:uppercase;font-weight:500}
+  .verdict{font-size:17px;font-weight:600;margin:4px 0 12px;letter-spacing:-.01em;text-wrap:balance}
+  .rows{display:grid;gap:8px;margin-bottom:12px}
+  .row{display:grid;grid-template-columns:82px minmax(0,1fr);gap:12px;font-size:13.5px}
+  .row dt{font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;
+          text-transform:uppercase;color:var(--faint);padding-top:3px}
+  .row dd{margin:0;color:var(--muted)}
+  .facts{border-top:1px solid var(--rule);padding-top:12px;display:grid;
+         grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+  .fact dt{font-family:var(--mono);font-size:10px;letter-spacing:.1em;
+           text-transform:uppercase;color:var(--faint)}
+  .fact dd{margin:2px 0 0;font-family:var(--mono);font-size:12.5px;word-break:break-all}
+  .self{margin-top:28px;background:var(--surface-2);border:1px solid var(--rule);
+        border-radius:3px;padding:16px}
+  .self h2{margin:0 0 8px;font-size:13px;font-weight:600}
+  .self p{margin:0 0 12px;font-size:13px;color:var(--muted)}
+  pre{margin:0;overflow-x:auto;background:var(--surface);border:1px solid var(--rule);
+      border-radius:2px;padding:12px;font-family:var(--mono);font-size:11.5px;line-height:1.6}
+  .hidden{display:none}
+  .working{font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:20px}
+  @media (prefers-reduced-motion: reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="bar">
+    <div class="mark">certi<span>files</span></div>
+    <nav><span class="on">Verify</span><span>For artists</span><span>How it works</span></nav>
+  </header>
+
+  <h1>Check what the log says about a file</h1>
+  <p class="lede">Drop the file in. Certifiles never receives it — your browser computes the
+    fingerprint and looks that up. Every check that decides the answer runs here, not on our
+    server.</p>
+
+  <div class="drop" id="drop" tabindex="0" role="button"
+       aria-label="Choose a file to check, or drop one here">
+    <div class="drop-lead">Drop a file, or click to choose</div>
+    <div class="drop-sub">Any file. Nothing is uploaded.</div>
+    <div class="privacy">hashed in your browser · the file never leaves this page</div>
+  </div>
+  <input type="file" id="file" class="hidden">
+
+  <div class="or">or paste a fingerprint</div>
+  <form id="form">
+    <input id="hash" placeholder="64 hex characters, e.g. 9f2c41ab…"
+           aria-label="SHA-256 fingerprint" spellcheck="false" autocomplete="off">
+    <button type="submit">Look up</button>
+  </form>
+
+  <div id="working" class="working hidden"></div>
+  <div id="out"></div>
+
+  <section class="self">
+    <h2>Do not take this page's word for it</h2>
+    <p>This page is a convenience. The proof is the log, and the log is published so you can
+      check it without us — the verifier is open source and runs offline against downloaded
+      data.</p>
+    <pre id="cli">certifiles verify --file &lt;your file&gt; --offline</pre>
+  </section>
+</div>
+
+<script type="module">
+import { verifyFingerprint, hashFile, isContentHash } from "./verify.js";
+import { Status } from "./verifier.js";
+
+const BASE = new URLSearchParams(location.search).get("log") || "./log";
+
+const RAIL = {
+  [Status.VALID]: "proven", [Status.VALID_UNDERWITNESSED]: "partial",
+  [Status.PENDING_WITNESS]: "pending", [Status.NO_RECORD]: "unknown",
+  [Status.UNVERIFIED]: "unknown", [Status.INVALID]: "invalid",
+  [Status.COMPROMISED]: "compromised",
+};
+const LABEL = {
+  [Status.VALID]: "Recorded and witnessed",
+  [Status.VALID_UNDERWITNESSED]: "Recorded, lightly witnessed",
+  [Status.PENDING_WITNESS]: "Recorded, awaiting witnesses",
+  [Status.NO_RECORD]: "No record found",
+  [Status.UNVERIFIED]: "Cannot check right now",
+  [Status.INVALID]: "Record does not check out",
+  [Status.COMPROMISED]: "Log integrity failure",
+};
+
+const el = (id) => document.getElementById(id);
+const working = (text) => {
+  el("working").textContent = text;
+  el("working").classList.toggle("hidden", !text);
+};
+
+function render(result, fingerprint) {
+  const claim = result.claims?.[0];
+  const status = result.status;
+  const record = claim?.record;
+  const issuer = record?.issuer;
+
+  // A record-level failure carries its detail on the claim, not on the result.
+  // Reading only the latter left the most important failure states — a forged
+  // record, a missing proof — showing a status label with no explanation.
+  const verdict = record
+    ? `Registered by ${issuer.identity_id} at position ${claim.position}.`
+    : result.detail ?? claim?.detail ?? "This record could not be verified.";
+
+  const notProven =
+    "That the registrant created the work, or that it is not AI-generated. " +
+    "Certifiles records a claim and the time it was made. It does not adjudicate authorship.";
+
+  el("out").innerHTML = `
+    <div class="result">
+      <div class="rail" style="background:var(--${RAIL[status]})"></div>
+      <div class="inner">
+        <div class="state" style="color:var(--${RAIL[status]})">${LABEL[status]}</div>
+        <div class="verdict">${escape(verdict)}</div>
+        <dl class="rows">
+          ${record ? `<div class="row"><dt>Proven</dt><dd>${escape(claim.detail)}</dd></div>` : ""}
+          ${!record && claim ? `<div class="row"><dt>Position</dt><dd>${claim.position}</dd></div>` : ""}
+          ${record ? `<div class="row"><dt>Not proven</dt><dd>${notProven}</dd></div>` : ""}
+        </dl>
+        <dl class="facts">
+          <div class="fact"><dt>Fingerprint</dt><dd>${escape(fingerprint.slice(0, 16))}…</dd></div>
+          ${result.manifest ? `<div class="fact"><dt>Log size</dt><dd>${result.manifest.size}</dd></div>` : ""}
+          ${issuer ? `<div class="fact"><dt>Assurance</dt><dd>${escape(issuer.assurance_level)}</dd></div>` : ""}
+          ${result.quorum ? `<div class="fact"><dt>Witnesses</dt><dd>${result.quorum.witnesses.length} of ${result.quorum.required}</dd></div>` : ""}
+        </dl>
+        ${result.claims && result.claims.length > 1
+          ? `<p class="drop-sub" style="margin-top:12px">Also claimed at position${
+              result.claims.length > 2 ? "s" : ""} ${
+              result.claims.slice(1).map((c) => c.position).join(", ")
+            }. The log records claims; priority is the earliest position.</p>`
+          : ""}
+      </div>
+    </div>`;
+  el("cli").textContent = `certifiles verify --fingerprint ${fingerprint} --offline`;
+}
+
+function escape(text) {
+  const node = document.createElement("div");
+  node.textContent = text ?? "";
+  return node.innerHTML;
+}
+
+async function lookup(fingerprint) {
+  working("checking the published log…");
+  try {
+    render(await verifyFingerprint(BASE, fingerprint), fingerprint);
+  } catch (error) {
+    render({ status: Status.UNVERIFIED, detail: `Could not complete the check: ${error.message}` },
+           fingerprint);
+  }
+  working("");
+}
+
+el("form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const value = el("hash").value.trim().toLowerCase().replace(/^sha256:/, "");
+  if (!isContentHash(value)) {
+    render({ status: Status.INVALID, detail: "That is not a SHA-256 fingerprint — expected 64 hex characters." }, value || "—");
+    return;
+  }
+  lookup(value);
+});
+
+async function handleFile(file) {
+  working(`hashing ${file.name} in your browser…`);
+  const fingerprint = await hashFile(file, (p) => working(`hashing ${file.name}… ${Math.round(p * 100)}%`));
+  el("hash").value = fingerprint;
+  await lookup(fingerprint);
+}
+
+el("drop").addEventListener("click", () => el("file").click());
+el("drop").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" || e.key === " ") { e.preventDefault(); el("file").click(); }
+});
+el("file").addEventListener("change", (e) => e.target.files[0] && handleFile(e.target.files[0]));
+for (const type of ["dragenter", "dragover"]) {
+  el("drop").addEventListener(type, (e) => { e.preventDefault(); el("drop").classList.add("over"); });
+}
+for (const type of ["dragleave", "drop"]) {
+  el("drop").addEventListener(type, (e) => { e.preventDefault(); el("drop").classList.remove("over"); });
+}
+el("drop").addEventListener("drop", (e) => e.dataTransfer.files[0] && handleFile(e.dataTransfer.files[0]));
+
+const preset = new URLSearchParams(location.search).get("q");
+if (preset) { el("hash").value = preset; lookup(preset.toLowerCase()); }
+</script>
+</body>
+</html>

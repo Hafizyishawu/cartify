@@ -25,3 +25,6 @@ cartify-push-token
 
 # Ignore virtualenv
 venv/
+
+# Generated demo log for the verify page
+web/log/

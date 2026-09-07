@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Record — Certifiles</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="./certifiles.css">
+<style>
+  .record-head{display:grid;grid-template-columns:132px minmax(0,1fr);gap:24px}
+  @media (max-width:620px){.record-head{grid-template-columns:minmax(0,1fr)}}
+  .work-title{font-size:22px;font-weight:600;margin:0 0 4px;letter-spacing:-.015em}
+  .by{color:var(--muted);font-size:14px;margin:0 0 12px}
+  .assurance{display:inline-flex;gap:8px;font-family:var(--mono);font-size:11px;
+             text-transform:uppercase;letter-spacing:.1em;color:var(--muted);
+             border:1px solid var(--rule-firm);border-radius:2px;padding:2px 8px}
+  .copy{margin-left:auto;font-size:13px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="bar">
+    <div class="mark">certi<span>files</span></div>
+    <nav><a href="./index.html" style="text-decoration:none;color:inherit">Verify</a>
+         <span>For artists</span><span>How it works</span></nav>
+    <button id="copy" class="btn-ghost copy" type="button">Copy link</button>
+  </header>
+  <div id="out"><p class="muted">Loading the record…</p></div>
+</div>
+
+<script type="module">
+import { verifyPosition, Status } from "./verify.js";
+
+const params = new URLSearchParams(location.search);
+const BASE = params.get("log") || "./log";
+const POSITION = Number(params.get("p") ?? 0);
+
+const RAIL = {
+  [Status.VALID]:"proven",[Status.VALID_UNDERWITNESSED]:"partial",
+  [Status.PENDING_WITNESS]:"pending",[Status.NO_RECORD]:"unknown",
+  [Status.UNVERIFIED]:"unknown",[Status.INVALID]:"invalid",[Status.COMPROMISED]:"compromised"};
+const LABEL = {
+  [Status.VALID]:"Recorded and witnessed",
+  [Status.VALID_UNDERWITNESSED]:"Recorded, lightly witnessed",
+  [Status.PENDING_WITNESS]:"Recorded, awaiting witnesses",
+  [Status.NO_RECORD]:"No record found",[Status.UNVERIFIED]:"Cannot check right now",
+  [Status.INVALID]:"Record does not check out",[Status.COMPROMISED]:"Log integrity failure"};
+
+const esc = (t) => { const d=document.createElement("div"); d.textContent=t??""; return d.innerHTML; };
+const row = (label, value) => value == null || value === ""
+  ? "" : `<div class="ledger-row"><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`;
+
+const result = await verifyPosition(BASE, POSITION);
+
+if (!result.record) {
+  document.getElementById("out").innerHTML =
+    `<h1>${LABEL[result.status]}</h1><p class="muted">${esc(result.detail)}</p>`;
+} else {
+  const r = result.record;
+  const anchor = (result.anchors?.anchors ?? []).find((a) => a.attested_at !== null);
+  const fingerprints = Object.entries(r.content.fingerprints ?? {})
+    .map(([k, v]) => `${k}:${v}`).join(" · ");
+
+  document.getElementById("out").innerHTML = `
+    <div class="record-head">
+      <div class="thumb"><span>PREVIEW<br>SUPPLIED BY<br>REGISTRANT<br><br>NOT PART OF<br>THE RECORD</span></div>
+      <div>
+        <h1 class="work-title">Record ${POSITION}</h1>
+        <p class="by">Registered by <strong>${esc(r.issuer.identity_id)}</strong></p>
+        <span class="assurance">Assurance: ${esc(r.issuer.assurance_level)}</span>
+        <div class="result" style="margin-top:16px">
+          <div class="rail" style="background:var(--${RAIL[result.status]})"></div>
+          <div class="inner" style="padding:12px 16px">
+            <div class="state" style="color:var(--${RAIL[result.status]})">${LABEL[result.status]}</div>
+            <div class="verdict" style="font-size:15px;margin-bottom:0">${esc(result.claim.detail)}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <dl class="ledger">
+      ${row("Content fingerprint", `sha256:${r.content.sha256}`)}
+      ${row("Perceptual fingerprints", fingerprints || "none captured")}
+      ${row("Fingerprint quality", r.content.quality != null
+            ? `${r.content.quality}/100 — ${r.content.quality < 35
+                ? "low detail, near-match comparison is unreliable"
+                : "sufficient detail for near-match comparison"}` : null)}
+      ${row("Log position", `${POSITION} — log size ${result.manifest.size} at checkpoint`)}
+      ${row("Claim type", `${r.claim_type} — declared by the registrant, not adjudicated`)}
+      ${row("Declared creation date", r.declared_created_at
+            ? `${r.declared_created_at} — a claim, carrying no evidential weight` : null)}
+      ${row("Witnessed tree head", `size ${result.manifest.size} · root ${result.manifest.root_hash.slice(0,16)}…`
+            + (result.quorum?.witnesses.length
+               ? ` · cosigned by ${result.quorum.witnesses.join(", ")}`
+               : " · no witness cosignatures"))}
+      ${row("Anchor", anchor
+            ? `${anchor.kind} · attested ${new Date(anchor.attested_at * 1000).toISOString()}`
+            : "none attested yet — backdating is unbounded")}
+      ${row("Witness policy", result.policy
+            ? `v${result.policy.version} — K=${result.policy.required} of ${Object.keys(result.policy.witnesses).length}, in force from tree size ${result.policy.effective_from_size}`
+            : "not published")}
+    </dl>
+
+    <section class="self">
+      <h2>Do not take this page's word for it</h2>
+      <p>This page is a convenience. The proof is the log, and the log is published so you can
+         check it without us. The verifier is open source and runs offline against downloaded data.</p>
+      <pre>certifiles verify --record ${POSITION} --offline
+  inclusion proof      ${result.claim.status === Status.INVALID ? "FAILED" : "OK"}   position ${POSITION} of ${result.manifest.size}
+  tree head signature  ${result.quorum?.logSigned ? "OK" : "NOT VERIFIED"}   ${esc(result.policy?.log_key_name ?? "")}
+  witness cosignatures ${result.quorum ? `${result.quorum.witnesses.length} of ${result.quorum.required} required` : "policy not published"}
+  RESULT: ${LABEL[result.status].toLowerCase()}</pre>
+    </section>`;
+}
+
+document.getElementById("copy").addEventListener("click", async () => {
+  await navigator.clipboard.writeText(location.href);
+  document.getElementById("copy").textContent = "Link copied";
+});
+</script>
+</body>
+</html>
