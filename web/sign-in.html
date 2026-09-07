@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in · Certifiles</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="./certifiles.css">
+</head>
+<body>
+<div class="wrap">
+  <div id="nav"></div>
+  <h1>Sign in</h1>
+
+  <div class="form" id="step-password">
+    <div id="error"></div>
+    <div class="field">
+      <label for="email">Email address</label>
+      <input id="email" type="email" autocomplete="email" spellcheck="false">
+    </div>
+    <div class="field">
+      <label for="password">Password</label>
+      <input id="password" type="password" autocomplete="current-password">
+    </div>
+    <button id="submit" type="button">Sign in</button>
+    <p class="alt">No account yet? <a href="./register.html">Create one</a>.<br>
+      <a href="./forgot-password.html">Forgot your password?</a></p>
+  </div>
+
+  <div class="form" id="step-code" hidden>
+    <div class="field">
+      <label for="code">Six digit code</label>
+      <input id="code" class="mono" inputmode="numeric" autocomplete="one-time-code"
+             maxlength="6">
+      <div class="hint">From your authenticator app.</div>
+    </div>
+    <div id="code-error"></div>
+    <button id="verify" type="button">Continue</button>
+    <p class="alt"><a href="#" id="lost">Lost your authenticator?</a></p>
+  </div>
+
+  <div class="form" id="step-recovery" hidden>
+    <p class="muted" style="font-size:13.5px">Use one of the recovery codes you saved when
+      you set up your second factor. Each works once.</p>
+    <div class="field">
+      <label for="recovery">Recovery code</label>
+      <input id="recovery" class="mono" style="letter-spacing:.08em;font-size:15px"
+             placeholder="xxxxx-xxxxx" spellcheck="false" autocomplete="off">
+    </div>
+    <div id="recovery-error"></div>
+    <button id="use-recovery" type="button">Use this code</button>
+  </div>
+</div>
+
+<script type="module" src="./pages/sign-in.js"></script>
+</body>
+</html>

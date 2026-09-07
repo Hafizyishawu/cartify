@@ -28,3 +28,6 @@ venv/
 
 # Generated demo log for the verify page
 web/log/
+
+# Service databases
+var/
