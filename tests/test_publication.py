@@ -11,7 +11,7 @@ import unittest
 from pathlib import Path
 
 from certifiles.anchoring import AnchorKind, AnchorReceipt
-from certifiles.checkpoint import Checkpoint, SignedCheckpoint
+from certifiles.checkpoint import Checkpoint, SignedCheckpoint, WitnessPolicy
 from certifiles.log import TransparencyLog
 from certifiles.merkle import verify_consistency, verify_inclusion
 from certifiles.publication import (
@@ -378,6 +378,65 @@ class TestRefusals(PublicationTestCase):
 
         with self.assertRaises(PublicationError):
             _sharded(-1)
+
+
+class TestPolicyPublication(PublicationTestCase):
+    """Without these a verifier cannot check quorum at all."""
+
+    def policy(self, version=1, effective_from=0, required=1):
+        return WitnessPolicy(
+            version=version,
+            effective_from_size=effective_from,
+            log_key_name=ORIGIN,
+            log_public_key=b"\x99" * 32,
+            witnesses={"witness-a": b"\x11" * 32, "witness-b": b"\x22" * 32},
+            required=required,
+        )
+
+    def test_a_policy_is_published_with_its_keys(self):
+        # A verifier with no policy is left counting signatures it cannot
+        # attribute, which is the bypass the policy type exists to prevent.
+        self.fill(3)
+        self.site.publish(
+            self.log, SignedCheckpoint(self.log.checkpoint(ORIGIN)),
+            policies=[self.policy(required=2)],
+        )
+        published = json.loads((self.root / "policy/000001.json").read_text())
+        self.assertEqual(published["required"], 2)
+        self.assertEqual(published["log_key_name"], ORIGIN)
+        self.assertEqual(published["log_public_key"], "99" * 32)
+        self.assertEqual(set(published["witnesses"]), {"witness-a", "witness-b"})
+
+    def test_the_manifest_lists_every_published_policy_version(self):
+        self.fill(2)
+        self.site.publish(
+            self.log, SignedCheckpoint(self.log.checkpoint(ORIGIN)),
+            policies=[self.policy(version=2, effective_from=1), self.policy(version=1)],
+        )
+        manifest = json.loads((self.root / "manifest.json").read_text())
+        self.assertEqual(manifest["policy_versions"], [1, 2])
+
+    def test_a_published_policy_cannot_be_rewritten(self):
+        # ADR 0001 rule 4: policy history is append-only, so a published
+        # version changing restates assurance already given.
+        self.fill(2)
+        head = SignedCheckpoint(self.log.checkpoint(ORIGIN))
+        self.site.publish(self.log, head, policies=[self.policy(required=1)])
+        with self.assertRaises(PublicationError):
+            self.site.publish(self.log, head, policies=[self.policy(required=2)])
+
+    def test_republishing_an_identical_policy_is_a_no_op(self):
+        self.fill(2)
+        head = SignedCheckpoint(self.log.checkpoint(ORIGIN))
+        self.site.publish(self.log, head, policies=[self.policy()])
+        report = self.site.publish(self.log, head, policies=[self.policy()])
+        self.assertIn("policy/000001.json", report.unchanged)
+
+    def test_publishing_without_a_policy_says_so_rather_than_implying_one(self):
+        self.fill(2)
+        self.site.publish(self.log, SignedCheckpoint(self.log.checkpoint(ORIGIN)))
+        manifest = json.loads((self.root / "manifest.json").read_text())
+        self.assertEqual(manifest["policy_versions"], [])
 
 
 class TestAnchorPublication(PublicationTestCase):

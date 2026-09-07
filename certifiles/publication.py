@@ -18,6 +18,7 @@ paths and these bytes, so changing either invalidates work already published;
     proofs/consistency/<a>-<b>.json   a published head is a prefix of a later one
     anchors/<size>.json               receipts covering that head
     index/by-content/<sharded>.json   fingerprint to positions
+    policy/<version>.json             the witness policy in force from a size
 
 Two classes of file, and the difference is load-bearing.
 
@@ -52,7 +53,11 @@ from pathlib import Path
 from typing import Sequence
 
 from certifiles.anchoring import AnchorReceipt, diverged
-from certifiles.checkpoint import SignedCheckpoint, parse as parse_checkpoint
+from certifiles.checkpoint import (
+    SignedCheckpoint,
+    WitnessPolicy,
+    parse as parse_checkpoint,
+)
 from certifiles.record import SHA256_PATTERN
 
 FORMAT_VERSION = 1
@@ -163,6 +168,7 @@ class StaticPublication:
         signed: SignedCheckpoint,
         anchors: Sequence[AnchorReceipt] = (),
         previous_sizes: Sequence[int] = (),
+        policies: Sequence[WitnessPolicy] = (),
     ) -> PublishReport:
         """Write everything a verifier needs for the log at `signed`'s size.
 
@@ -201,12 +207,48 @@ class StaticPublication:
             )
 
         report = PublishReport(size=size)
+        self._publish_policies(report, policies)
         self._publish_checkpoint(report, signed)
         self._publish_entries(report, log, size)
         self._publish_consistency(report, log, size, previous_sizes)
         self._publish_anchors(report, anchors, size)
-        self._publish_manifest(report, signed, anchors)
+        self._publish_manifest(report, signed, anchors, policies)
         return report
+
+    def _publish_policies(
+        self, report: PublishReport, policies: Sequence[WitnessPolicy]
+    ) -> None:
+        """Publish each witness policy version.
+
+        Without these a verifier cannot check quorum at all: it has no way to
+        learn K, which keys are witnesses, or which key is the log's. It would
+        be left counting signatures it cannot attribute, which is the bypass
+        ADR 0001's policy type exists to prevent.
+
+        Immutable. ADR 0001 rule 4 makes policy history append-only, so a
+        published version changing is a restatement of assurance already given.
+        """
+        for policy in policies:
+            path = f"policy/{policy.version:06d}.json"
+            self._record(
+                report,
+                self._write_json(
+                    path,
+                    {
+                        "version": policy.version,
+                        "effective_from_size": policy.effective_from_size,
+                        "required": policy.required,
+                        "log_key_name": policy.log_key_name,
+                        "log_public_key": policy.log_public_key.hex(),
+                        "witnesses": {
+                            name: key.hex()
+                            for name, key in sorted(policy.witnesses.items())
+                        },
+                    },
+                    immutable=True,
+                ),
+                path,
+            )
 
     def _publish_checkpoint(self, report: PublishReport, signed: SignedCheckpoint) -> None:
         """Publish a tree head, allowing signatures to accumulate on it.
@@ -416,6 +458,7 @@ class StaticPublication:
         report: PublishReport,
         signed: SignedCheckpoint,
         anchors: Sequence[AnchorReceipt],
+        policies: Sequence[WitnessPolicy] = (),
     ) -> None:
         attested = [a.attested_at for a in anchors if a.attested_at is not None]
         payload = {
@@ -424,6 +467,7 @@ class StaticPublication:
             "size": signed.checkpoint.size,
             "root_hash": signed.checkpoint.root_hash.hex(),
             "signature_count": len(signed.signatures),
+            "policy_versions": sorted(p.version for p in policies),
             "latest_attested_anchor": max(attested) if attested else None,
             "layout": {
                 "checkpoint": "checkpoint",
@@ -432,6 +476,7 @@ class StaticPublication:
                 "inclusion_proofs": "proofs/inclusion/{position sharded}.json",
                 "consistency_proofs": "proofs/consistency/{from}-{to}.json",
                 "anchors": "anchors/{size:012d}.json",
+                "policies": "policy/{version:06d}.json",
                 "content_index": "index/by-content/{hash sharded 2/2}.json",
             },
             "notice": (
