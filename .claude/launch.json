@@ -9,6 +9,15 @@
         "exec python3 -m http.server \"${PORT:-0}\" --bind 127.0.0.1 --directory web"
       ],
       "autoPort": true
+    },
+    {
+      "name": "certifiles-service",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": [
+        "-c",
+        "exec python3 scripts/run_service.py --port \"${PORT:-8770}\" --web web --data var"
+      ],
+      "autoPort": true
     }
   ]
 }
