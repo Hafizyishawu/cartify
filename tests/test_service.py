@@ -16,7 +16,7 @@ from pathlib import Path
 
 from certifiles.accounts import AccountStore, MfaState, totp_code
 from certifiles.log import TransparencyLog
-from certifiles.ratelimit import SIGN_IN, WORK_REGISTRATION, RateLimiter
+from certifiles.ratelimit import DOMAIN_CHECK, SIGN_IN, WORK_REGISTRATION, RateLimiter
 from certifiles.record import AssuranceLevel
 from certifiles.service import SESSION_COOKIE, Services, serve
 from certifiles.sessions import SessionStore
@@ -85,12 +85,17 @@ class ServiceTestCase(unittest.TestCase):
         self.services = Services(
             accounts=self.accounts, sessions=self.sessions, limiter=self.limiter,
             log=self.log, web_root=web, secure_cookies=False,
+            resolver=self.make_resolver(), domain_secret=b"test-server-secret",
         )
         self.server = serve(self.services, port=0)
         self.addCleanup(self.server.server_close)
         self.addCleanup(self.server.shutdown)
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
         self.client = Client(f"http://127.0.0.1:{self.server.server_address[1]}")
+
+    def make_resolver(self):
+        """No resolver by default, so nothing accidentally reaches the network."""
+        return None
 
     def signed_up(self, client=None):
         client = client or self.client
@@ -366,3 +371,181 @@ class TestSessionHandling(ServiceTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class StubResolver:
+    """Stands in for DNS. Returns, or raises, whatever the test asked for."""
+
+    def __init__(self, result):
+        self.result = result
+        self.names = []
+
+    def txt(self, name):
+        self.names.append(name)
+        if isinstance(self.result, Exception):
+            raise self.result
+        return self.result
+
+
+class TestDomainVerification(ServiceTestCase):
+    """The three outcomes, and the difference between two of them.
+
+    "Not published" and "not checked" look similar in a UI and are not the same
+    claim at all. One says the resolvers answered and the record was absent; the
+    other says nothing about the domain, only about our lookup.
+    """
+
+    published = []
+
+    def make_resolver(self):
+        self.resolver = StubResolver(self.published)
+        return self.resolver
+
+    def challenge(self, client, domain="example.com"):
+        status, body = client.request("POST", "/api/domain/challenge", {"domain": domain})
+        self.assertEqual(status, 200)
+        return body
+
+    def test_a_challenge_needs_a_session(self):
+        status, _ = self.client.request("POST", "/api/domain/challenge",
+                                        {"domain": "example.com"}, csrf=False)
+        self.assertEqual(status, 401)
+
+    def test_a_check_needs_a_session(self):
+        status, _ = self.client.request("POST", "/api/domain/verify",
+                                        {"domain": "example.com"}, csrf=False)
+        self.assertEqual(status, 401)
+
+    def test_a_check_needs_a_csrf_token(self):
+        client, _ = self.with_mfa()
+        status, _ = client.request("POST", "/api/domain/verify",
+                                   {"domain": "example.com"}, csrf=False)
+        self.assertEqual(status, 403)
+
+    def test_the_challenge_names_the_record_to_publish(self):
+        client, _ = self.with_mfa()
+        body = self.challenge(client)
+        self.assertEqual(body["record_name"], "_certifiles.example.com")
+        self.assertTrue(body["record_value"].startswith("certifiles-domain-verification="))
+
+    def test_two_accounts_get_different_challenges_for_one_domain(self):
+        # Otherwise anyone could watch for a real owner to publish and claim the
+        # domain the instant the record appears.
+        from certifiles.domains import challenge_for
+
+        client, _ = self.with_mfa()
+        mine = self.challenge(client)["record_value"]
+        other = self.accounts.create("other@example.com", PASSWORD)
+        theirs = challenge_for(other.identity_id, "example.com", b"test-server-secret")
+        self.assertNotEqual(mine, theirs.record_value)
+
+    def confirmed(self):
+        """A signed-in account that has confirmed its email address."""
+        client, _ = self.with_mfa()
+        _, me = client.request("GET", "/api/me", csrf=False)
+        self.accounts.mark_email_verified(me["identity_id"])
+        return client
+
+    def test_a_published_record_proves_the_domain(self):
+        client = self.confirmed()
+        self.resolver.result = [self.challenge(client)["record_value"]]
+        status, body = client.request("POST", "/api/domain/verify", {"domain": "example.com"})
+        self.assertEqual(status, 200)
+        self.assertEqual(body["assurance_level"], "domain")
+        _, me = client.request("GET", "/api/me", csrf=False)
+        self.assertEqual(me["assurance_level"], "domain")
+
+    def test_the_lookup_asks_for_the_challenge_name(self):
+        client = self.confirmed()
+        self.resolver.result = [self.challenge(client)["record_value"]]
+        client.request("POST", "/api/domain/verify", {"domain": "example.com"})
+        self.assertEqual(self.resolver.names, ["_certifiles.example.com"])
+
+    def test_an_unconfirmed_address_cannot_prove_a_domain(self):
+        # The ladder is climbed in order. A domain proof is the stronger claim
+        # but does not make the account reachable, and skipping the rung would
+        # leave the level asserting an email check that never happened.
+        client, _ = self.with_mfa()
+        self.resolver.result = [self.challenge(client)["record_value"]]
+        status, _ = client.request("POST", "/api/domain/verify", {"domain": "example.com"})
+        self.assertEqual(status, 403)
+        _, me = client.request("GET", "/api/me", csrf=False)
+        self.assertEqual(me["assurance_level"], "unverified")
+
+    def test_a_refused_ladder_skip_spends_no_lookup(self):
+        # Refusing on policy is not the caller misbehaving, so it costs them
+        # nothing and costs us no outbound request.
+        client, _ = self.with_mfa()
+        self.resolver.result = [self.challenge(client)["record_value"]]
+        client.request("POST", "/api/domain/verify", {"domain": "example.com"})
+        self.assertEqual(self.resolver.names, [])
+
+    def test_the_record_can_be_prepared_before_the_address_is_confirmed(self):
+        # Publishing DNS is the slow half. An unconfirmed account can still take
+        # the record away and publish it while the email is in flight.
+        client, _ = self.with_mfa()
+        body = self.challenge(client)
+        self.assertTrue(body["record_value"].startswith("certifiles-domain-verification="))
+
+    def test_the_challenge_survives_confirming_the_address(self):
+        # It is derived from the identity and the domain, not from the level, so
+        # a record published early still matches after the rung is cleared.
+        client, _ = self.with_mfa()
+        before = self.challenge(client)["record_value"]
+        _, me = client.request("GET", "/api/me", csrf=False)
+        self.accounts.mark_email_verified(me["identity_id"])
+        self.assertEqual(self.challenge(client)["record_value"], before)
+
+    def test_an_absent_record_is_a_client_error_and_changes_nothing(self):
+        client = self.confirmed()
+        self.challenge(client)
+        self.resolver.result = []
+        status, _ = client.request("POST", "/api/domain/verify", {"domain": "example.com"})
+        self.assertEqual(status, 400)
+        _, me = client.request("GET", "/api/me", csrf=False)
+        self.assertEqual(me["assurance_level"], "email")
+
+    def test_another_accounts_record_does_not_prove_the_domain(self):
+        client = self.confirmed()
+        other = self.accounts.create("other@example.com", PASSWORD)
+        from certifiles.domains import challenge_for
+
+        theirs = challenge_for(other.identity_id, "example.com", b"test-server-secret")
+        self.resolver.result = [theirs.record_value]
+        status, _ = client.request("POST", "/api/domain/verify", {"domain": "example.com"})
+        self.assertEqual(status, 400)
+
+    def test_a_failed_lookup_is_503_not_a_failed_proof(self):
+        # The distinction the design turns on. A DNS outage must never read as
+        # "you do not control this domain".
+        client = self.confirmed()
+        self.challenge(client)
+        self.resolver.result = RuntimeError("resolvers disagreed")
+        status, _ = client.request("POST", "/api/domain/verify", {"domain": "example.com"})
+        self.assertEqual(status, 503)
+        _, me = client.request("GET", "/api/me", csrf=False)
+        self.assertEqual(me["assurance_level"], "email")
+
+    def test_a_malformed_domain_is_400_not_503(self):
+        # Reporting a typo as a service outage sends the user to wait for a
+        # recovery that will never come.
+        client = self.confirmed()
+        status, _ = client.request("POST", "/api/domain/verify", {"domain": "not a domain"})
+        self.assertEqual(status, 400)
+
+    def test_a_malformed_domain_is_never_looked_up(self):
+        client = self.confirmed()
+        client.request("POST", "/api/domain/verify", {"domain": "not a domain"})
+        self.assertEqual(self.resolver.names, [])
+
+    def test_checks_are_rate_limited_before_any_lookup_happens(self):
+        # This endpoint spends outbound requests to resolvers we do not run, so
+        # the limit has to bite before the request goes out, not after.
+        client = self.confirmed()
+        self.challenge(client)
+        self.resolver.result = []
+        for _ in range(DOMAIN_CHECK.allowed):
+            client.request("POST", "/api/domain/verify", {"domain": "example.com"})
+        status, _ = client.request("POST", "/api/domain/verify", {"domain": "example.com"})
+        self.assertEqual(status, 429)
+        self.assertEqual(len(self.resolver.names), DOMAIN_CHECK.allowed)

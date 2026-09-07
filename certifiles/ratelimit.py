@@ -58,6 +58,10 @@ SIGN_IN = Limit("sign-in", allowed=5, window_seconds=15 * 60)
 ACCOUNT_CREATION = Limit("account-creation", allowed=3, window_seconds=60 * 60)
 WORK_REGISTRATION = Limit("work-registration", allowed=60, window_seconds=60 * 60)
 MFA_ATTEMPT = Limit("mfa", allowed=8, window_seconds=15 * 60)
+# A domain check makes outbound requests to resolvers we do not run, on a name
+# the caller chooses. Unlimited, it is a free DNS query engine pointed at our
+# quota. Loose enough that someone refreshing while DNS propagates never sees it.
+DOMAIN_CHECK = Limit("domain-check", allowed=20, window_seconds=60 * 60)
 
 
 class RateLimiter:

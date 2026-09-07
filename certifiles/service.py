@@ -51,6 +51,7 @@ from certifiles.fingerprint import Fingerprint, FingerprintError, FingerprintKin
 from certifiles.log import TransparencyLog
 from certifiles.ratelimit import (
     ACCOUNT_CREATION,
+    DOMAIN_CHECK,
     MFA_ATTEMPT,
     SIGN_IN,
     WORK_REGISTRATION,
@@ -428,9 +429,30 @@ class Handler(BaseHTTPRequestHandler):
         _, session = self._require_session()
         self._require_csrf(session)
         account = self.services.accounts.by_identity(session.identity_id)
+        # The ladder is climbed in order. A domain proof is the stronger claim,
+        # but it is not a substitute for being reachable: alerts about work that
+        # resembles yours, and every recovery path, go to a confirmed address.
+        # Allowing the skip would also let the level assert an email check that
+        # never happened.
+        if account.assurance_level is AssuranceLevel.UNVERIFIED:
+            raise ApiError(
+                403,
+                "Confirm your email address first. A domain proof is the stronger "
+                "claim, but it does not make the account reachable.",
+            )
+        # Keyed by account, not address: this endpoint spends outbound requests
+        # to resolvers we do not run, and a session is already required.
+        decision = self.services.limiter.consume(DOMAIN_CHECK, account.identity_id)
+        if not decision.allowed:
+            raise ApiError(429, "Too many domain checks.", decision.retry_after)
+        # Normalised outside the lookup, so a malformed domain stays a client
+        # error rather than being reported as our resolvers being unavailable.
         try:
             domain = normalise_domain(str(self._json_body().get("domain", "")))
-            challenge = challenge_for(account.identity_id, domain, self.services.domain_secret)
+        except DomainError as error:
+            raise ApiError(400, str(error))
+        challenge = challenge_for(account.identity_id, domain, self.services.domain_secret)
+        try:
             proved = verify_domain(challenge, self.services.resolver)
         except DomainError as error:
             # A lookup that did not complete is not a failed proof, and saying
@@ -438,7 +460,8 @@ class Handler(BaseHTTPRequestHandler):
             raise ApiError(503, str(error))
         if not proved:
             raise ApiError(
-                400, "That record is not published yet. DNS can take a while to spread."
+                400,
+                "The resolvers answered, and that record was not among what they agreed on.",
             )
         self.services.accounts.set_assurance(account.identity_id, AssuranceLevel.DOMAIN)
         self._send_json(200, {"assurance_level": "domain", "domain": domain})
