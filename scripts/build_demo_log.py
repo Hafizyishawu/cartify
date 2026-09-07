@@ -8,6 +8,7 @@ have something to verify against, not to model key custody.
 
 import argparse
 import hashlib
+import shutil
 import sys
 import time
 from pathlib import Path
@@ -59,7 +60,21 @@ WORKS = [
 ]
 
 
-def build(out: Path, witnesses: int) -> None:
+# The current hour, not the current second. An attested anchor time is set once
+# and never moved, which is the backdating rule the publisher enforces, so a
+# generator stamping the exact time could not run twice against its own output.
+# Rounding to the hour keeps it re-runnable and keeps the demo honest: hourly is
+# the real anchoring cadence, so a fresh build genuinely is freshly anchored.
+ANCHOR_INTERVAL_SECONDS = 3600
+
+
+def anchor_time() -> int:
+    return int(time.time() // ANCHOR_INTERVAL_SECONDS) * ANCHOR_INTERVAL_SECONDS
+
+
+def build(out: Path, witnesses: int, keep: bool) -> None:
+    if not keep and out.exists():
+        shutil.rmtree(out)
     log = TransparencyLog()
     log_signer = InMemoryEd25519Signer.from_seed(ORIGIN, b"\x01" * 32)
     witness_signers = [
@@ -103,8 +118,8 @@ def build(out: Path, witnesses: int) -> None:
         required=min(witnesses, 2),
     )
     anchor = AnchorReceipt(
-        AnchorKind.RFC3161, log.size(), log.root(), int(time.time()),
-        b"development-token", attested_at=int(time.time()),
+        AnchorKind.RFC3161, log.size(), log.root(), anchor_time(),
+        b"development-token", attested_at=anchor_time(),
     )
 
     report = StaticPublication(out).publish(
@@ -119,5 +134,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", default="web/log", type=Path)
     parser.add_argument("--witnesses", type=int, default=2)
+    parser.add_argument(
+        "--keep", action="store_true",
+        help="publish into an existing site instead of regenerating it, which"
+             " exercises the append-only and immutability paths",
+    )
     args = parser.parse_args()
-    build(args.out, args.witnesses)
+    build(args.out, args.witnesses, args.keep)

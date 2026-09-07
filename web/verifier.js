@@ -1,4 +1,4 @@
-// Certifiles verifier — RFC 6962 inclusion proofs and checkpoint quorum, in the browser.
+// Certifiles verifier: RFC 6962 inclusion proofs and checkpoint quorum, in the browser.
 //
 // The point of this file is that the page does not ask a server whether a record
 // is valid. It fetches published data and checks the proof itself, so a

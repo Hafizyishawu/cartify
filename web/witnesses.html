@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Witnesses · Certifiles</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="./certifiles.css">
+</head>
+<body>
+<div class="wrap">
+  <div id="nav"></div>
+  <h1>Witnesses</h1>
+  <p class="lead">Independent organisations that cosign this log, and the policy that says how
+    many are required.</p>
+  <div id="out"><p class="muted">Reading the published policy…</p></div>
+
+  <div class="prose">
+    <h2>Why anyone else has to sign</h2>
+    <p>A Merkle tree stops us editing history. It does not stop us keeping two histories.
+      Whoever holds the log's signing key can sign one tree head for you and a different one
+      for someone else, both internally consistent, both serving valid proofs. Nothing in the
+      mathematics detects that.</p>
+    <p>A witness holds one piece of state: the last tree head it signed. When we offer a new
+      one, it checks that the new head genuinely continues the same log, with nothing removed
+      or inserted, and only then cosigns. If we ever kept a second history, the new head would
+      not line up with what the witness is holding, and it would refuse.</p>
+    <p><strong>Witnesses exist to protect you from us.</strong> That is the point, and it is
+      why the count above matters more than anything else on this site.</p>
+
+    <h2>What we ask of a witness</h2>
+    <p>Very little, deliberately. A witness never stores our log, never sees a registered file,
+      never evaluates a claim, and never handles anyone's personal data. It verifies one
+      property, that the log has only ever grown and there is only one of it, and signs.
+      Seconds of computer time per interval.</p>
+    <p>We do not pay witnesses. A witness we funded would be us wearing a hat, and the
+      independence is the entire product.</p>
+
+    <h2>Anchors are not witnesses</h2>
+    <p>We also publish each tree head to places we do not control: a timestamping authority and
+      a public timestamp chain. Those bound how far back a record can be dated, which is
+      useful, but a timestamping authority will stamp two conflicting tree heads without
+      noticing. Anchors never count toward the quorum, and there is no code path that would
+      let them.</p>
+
+    <h2>Interested in witnessing?</h2>
+    <p>We are looking for organisations with a reason to care about durable provenance and no
+      reason to favour us: archives, libraries, university departments, photographers' and
+      journalists' bodies, and other provenance services willing to watch each other. The
+      software is open and the operational burden is a scheduled job.</p>
+    <p class="muted">Contact details go here once there is an entity to contact.</p>
+  </div>
+</div>
+
+<script type="module" src="./pages/witnesses.js"></script>
+</body>
+</html>

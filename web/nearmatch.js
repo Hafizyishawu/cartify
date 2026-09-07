@@ -2,7 +2,7 @@
 //
 // Fingerprints live inside the record, so they are covered by the inclusion
 // proof. That means a browser can run this search over verified data rather
-// than trusting a server's similarity score — the operator cannot quietly
+// than trusting a server's similarity score. The operator cannot quietly
 // revise the numbers an artist is searching on.
 //
 // The cost is that it reads every published entry, which is fine for a small

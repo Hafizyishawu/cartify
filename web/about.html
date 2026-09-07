@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>About · Certifiles</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="./certifiles.css">
+</head>
+<body>
+<div class="wrap">
+  <div id="nav"></div>
+  <h1>How it works</h1>
+  <h1>About Certifiles</h1>
+  <p class="lead">A public record of authorship claims, built so that believing it does not
+    require trusting the people who run it.</p>
+
+  <div class="prose">
+    <h2>The problem we are actually solving</h2>
+    <p>Creators have no cheap way to establish that a work existed in a particular form at a
+      particular time. Copyright exists from creation, but proving <em>when</em> is the part
+      that fails in practice, usually at the exact moment it matters.</p>
+    <p>Certifiles is a public, append only log of authorship claims with proofs anyone can
+      check. It grew out of Cartify, a certification tool for artists, and the log is the part
+      of that idea that generalises to any file.</p>
+
+    <h2>Why you should not have to trust us</h2>
+    <p>We hold the log's signing key. That makes us the most capable attacker on our own
+      system: we could try to backdate a record, or serve one history to you and another to
+      someone else. A design that asks you to believe we would not is not a design.</p>
+    <p>So the guarantees are structural rather than promised:</p>
+    <ul>
+      <li><strong>A record is valid only if it is in the log.</strong> A signature alone proves
+        nothing, so a stolen key produces records that fail verification.</li>
+      <li><strong>Independent witnesses cosign every tree head</strong>, so we cannot keep two
+        histories without one of them noticing and refusing.</li>
+      <li><strong>Tree heads are published where we cannot rewrite them</strong>, which bounds
+        how far back anything can be dated.</li>
+      <li><strong>The whole log is published as plain files</strong>, so verification works
+        with no Certifiles server in the path, including if this company ends.</li>
+      <li><strong>We never receive your files.</strong> Only fingerprints, computed in your
+        browser.</li>
+    </ul>
+
+    <h2>What we hold, and what we cannot delete</h2>
+    <p>The log contains fingerprints, an opaque identity identifier, and what was claimed. It
+      contains no names, no email addresses and no files. That is not only for privacy: an
+      append only log <strong>cannot honour a deletion request</strong>, so anything that might
+      need deleting must never enter it. Account details live in an ordinary database where
+      erasure works normally.</p>
+    <p>A record itself cannot be removed. It can be superseded or marked disputed. We would
+      rather you know that before registering than discover it afterwards.</p>
+
+    <h2>Where this is today</h2>
+    <p>The log, the proofs, the publication format and the verifiers are built and tested. No
+      witness has yet agreed to cosign, which means the log currently runs at
+      <strong>stage 0</strong> and every record says so. The
+      <a href="./status.html">status page</a> shows the live position rather than a claim about
+      it.</p>
+    <p>Recruiting witnesses is the work that no amount of engineering completes, and it is the
+      reason the paid tier is closed. If your organisation might witness, the
+      <a href="./witnesses.html">witness page</a> describes what it involves.</p>
+
+    <h2>Open source</h2>
+    <p>The verifier is open source, and it has to be. "You do not have to trust me" is only true
+      if you can check the claim with software we did not hand you at the moment of checking.</p>
+  </div>
+</div>
+<script type="module" src="./pages/about.js"></script>
+</body>
+</html>

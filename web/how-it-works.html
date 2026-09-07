@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How it works · Certifiles</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="./certifiles.css">
+</head>
+<body>
+<div class="wrap">
+  <div id="nav"></div>
+  <h1>How it works</h1>
+  <p class="lead">Certifiles records that a file existed, in a particular form, claimed by a
+    particular identity, at a point in time. Everything below is about making that one sentence
+    checkable by someone who does not trust us.</p>
+
+  <div class="prose">
+    <h2>What happens when a work is registered</h2>
+    <ol>
+      <li>Your browser computes the file's SHA-256 fingerprint and a few perceptual
+        fingerprints. <strong>The file itself is never uploaded.</strong> We hold no copy and
+        want none.</li>
+      <li>Those fingerprints, your identity, the strength of that identity, and what you are
+        claiming go into a record.</li>
+      <li>The record is appended to a public log at a permanent position. Positions are never
+        reassigned, and nothing is ever edited or deleted.</li>
+      <li>The log's tree head is signed, published where we cannot rewrite it, and cosigned by
+        independent witnesses.</li>
+    </ol>
+
+    <h2>What anyone can then check, without us</h2>
+    <p>The whole log is published as plain files. Given a file, a browser or the command line
+      verifier can prove that a record for it sits at a specific position in a log whose head
+      independent parties have signed. No account, no API, no working Certifiles server.</p>
+    <p>That is deliberate. A provenance service whose verification depends on the provider
+      being alive, solvent and honest has not provided provenance.</p>
+
+    <h2>Two things this cannot do</h2>
+    <h3>It cannot tell you a file is not AI generated</h3>
+    <p>A generated image produces a fingerprint exactly like a photograph does. Registration
+      proves a file existed and was claimed, not how it was made. What Certifiles offers is the
+      opposite direction: an artist can <strong>declare</strong> how a work was made, and that
+      declaration is recorded permanently alongside it. Absence of a record proves nothing at
+      all, because most work in the world is registered nowhere.</p>
+
+    <h3>It cannot prove who created something</h3>
+    <p>A fingerprint proves a file is unchanged. It says nothing about authorship. What the log
+      records is who registered first, which is how copyright registration, patent filing and
+      trademark have always worked. That puts the burden on authors to register before
+      publishing, and we would rather say so plainly than imply a guarantee we cannot keep.</p>
+
+    <h2>Backdating, and why anchors exist</h2>
+    <p>The attack that matters is not forging a record. It is moving one earlier in time, since
+      disputes turn on who was first. We publish each tree head to a timestamping authority and
+      a public timestamp chain, both outside our control, so a record cannot later be claimed
+      to predate an anchor that already covered it.</p>
+
+    <h2>Forks, and why witnesses exist</h2>
+    <p>A tamper evident log stops us editing history and does not stop us keeping two
+      histories, one for you and one for someone else. Only independent parties checking that
+      the log has a single continuous history close that, which is why the
+      <a href="./witnesses.html">witness page</a> is the most important page here and why the
+      <a href="./status.html">status page</a> shows the current count.</p>
+
+    <h2>Near match monitoring</h2>
+    <p>Perceptual fingerprints let us surface later registrations that resemble your work. This
+      catches ordinary copying. It is not proof: two unrelated images can score close by
+      coincidence, and someone who knows how the measure works can evade it. Alerts show the
+      raw distances and never a verdict, because a false alert is an accusation handed to you
+      about someone who may have done nothing.</p>
+  </div>
+</div>
+<script type="module" src="./pages/how-it-works.js"></script>
+</body>
+</html>

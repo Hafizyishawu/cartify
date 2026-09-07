@@ -1,7 +1,7 @@
 // The verify flow: fetch published data, check the proof locally, report honestly.
 //
 // The file never leaves the browser. Only its SHA-256 is used, and every check
-// that decides the outcome runs here rather than on a server — a compromised
+// that decides the outcome runs here rather than on a server, because a compromised
 // Certifiles must not be able to manufacture a positive result.
 
 import {
@@ -67,7 +67,7 @@ class Site {
  * Look up a fingerprint and verify every claim on it.
  *
  * Returns one result per claim, earliest first. A fingerprint may carry more
- * than one claim — the log records claims and priority is position, so the
+ * than one claim. The log records claims and priority is position, so the
  * honest answer is "first registered by X, also claimed by Y" rather than a
  * winner picked here.
  */
@@ -108,7 +108,7 @@ export async function verifyFingerprint(baseUrl, contentHash) {
       status: Status.COMPROMISED,
       detail:
         "The published manifest and the signed checkpoint disagree about the log's " +
-        "own head. Save both files and publish them — this is evidence, and it " +
+        "own head. Save both files and publish them: this is evidence, and it " +
         "should not be reported privately to Certifiles.",
       evidence: { manifest, checkpoint: hex(checkpoint.rootHash) },
     };
@@ -274,9 +274,9 @@ export async function verifyPosition(baseUrl, position) {
 /**
  * Every published record, for a client-side near-match search.
  *
- * Reads the whole log. Verifiable — the fingerprints are inside records covered
- * by the inclusion proof, so nothing here rests on a server's similarity score
- * — but linear in log size, and a server-side index has to take over long
+ * Reads the whole log. Verifiable, because the fingerprints are inside records
+ * covered by the inclusion proof, so nothing here rests on a server's similarity
+ * score. Also linear in log size, and a server-side index has to take over long
  * before the download becomes the problem. The interface says so rather than
  * letting a user discover it.
  */

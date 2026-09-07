@@ -3,10 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Verify a file — Certifiles</title>
+<title>Verify a file · Certifiles</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="./certifiles.css">
 <style>
   :root {
     --paper:#F4F5F3; --surface:#FFF; --surface-2:#ECEEEA; --ink:#14171A;
@@ -87,13 +88,10 @@
 </head>
 <body>
 <div class="wrap">
-  <header class="bar">
-    <div class="mark">certi<span>files</span></div>
-    <nav><span class="on">Verify</span><span>For artists</span><span>How it works</span></nav>
-  </header>
+  <div id="nav"></div>
 
   <h1>Check what the log says about a file</h1>
-  <p class="lede">Drop the file in. Certifiles never receives it — your browser computes the
+  <p class="lede">Drop the file in. Certifiles never receives it: your browser computes the
     fingerprint and looks that up. Every check that decides the answer runs here, not on our
     server.</p>
 
@@ -118,134 +116,12 @@
   <section class="self">
     <h2>Do not take this page's word for it</h2>
     <p>This page is a convenience. The proof is the log, and the log is published so you can
-      check it without us — the verifier is open source and runs offline against downloaded
+      check it without us. The verifier is open source and runs offline against downloaded
       data.</p>
     <pre id="cli">certifiles verify --file &lt;your file&gt; --offline</pre>
   </section>
 </div>
 
-<script type="module">
-import { verifyFingerprint, hashFile, isContentHash } from "./verify.js";
-import { Status } from "./verifier.js";
-
-const BASE = new URLSearchParams(location.search).get("log") || "./log";
-
-const RAIL = {
-  [Status.VALID]: "proven", [Status.VALID_UNDERWITNESSED]: "partial",
-  [Status.PENDING_WITNESS]: "pending", [Status.NO_RECORD]: "unknown",
-  [Status.UNVERIFIED]: "unknown", [Status.INVALID]: "invalid",
-  [Status.COMPROMISED]: "compromised",
-};
-const LABEL = {
-  [Status.VALID]: "Recorded and witnessed",
-  [Status.VALID_UNDERWITNESSED]: "Recorded, lightly witnessed",
-  [Status.PENDING_WITNESS]: "Recorded, awaiting witnesses",
-  [Status.NO_RECORD]: "No record found",
-  [Status.UNVERIFIED]: "Cannot check right now",
-  [Status.INVALID]: "Record does not check out",
-  [Status.COMPROMISED]: "Log integrity failure",
-};
-
-const el = (id) => document.getElementById(id);
-const working = (text) => {
-  el("working").textContent = text;
-  el("working").classList.toggle("hidden", !text);
-};
-
-function render(result, fingerprint) {
-  const claim = result.claims?.[0];
-  const status = result.status;
-  const record = claim?.record;
-  const issuer = record?.issuer;
-
-  // A record-level failure carries its detail on the claim, not on the result.
-  // Reading only the latter left the most important failure states — a forged
-  // record, a missing proof — showing a status label with no explanation.
-  const verdict = record
-    ? `Registered by ${issuer.identity_id} at position ${claim.position}.`
-    : result.detail ?? claim?.detail ?? "This record could not be verified.";
-
-  const notProven =
-    "That the registrant created the work, or that it is not AI-generated. " +
-    "Certifiles records a claim and the time it was made. It does not adjudicate authorship.";
-
-  el("out").innerHTML = `
-    <div class="result">
-      <div class="rail" style="background:var(--${RAIL[status]})"></div>
-      <div class="inner">
-        <div class="state" style="color:var(--${RAIL[status]})">${LABEL[status]}</div>
-        <div class="verdict">${escape(verdict)}</div>
-        <dl class="rows">
-          ${record ? `<div class="row"><dt>Proven</dt><dd>${escape(claim.detail)}</dd></div>` : ""}
-          ${!record && claim ? `<div class="row"><dt>Position</dt><dd>${claim.position}</dd></div>` : ""}
-          ${record ? `<div class="row"><dt>Not proven</dt><dd>${notProven}</dd></div>` : ""}
-        </dl>
-        <dl class="facts">
-          <div class="fact"><dt>Fingerprint</dt><dd>${escape(fingerprint.slice(0, 16))}…</dd></div>
-          ${result.manifest ? `<div class="fact"><dt>Log size</dt><dd>${result.manifest.size}</dd></div>` : ""}
-          ${issuer ? `<div class="fact"><dt>Assurance</dt><dd>${escape(issuer.assurance_level)}</dd></div>` : ""}
-          ${result.quorum ? `<div class="fact"><dt>Witnesses</dt><dd>${result.quorum.witnesses.length} of ${result.quorum.required}</dd></div>` : ""}
-        </dl>
-        ${result.claims && result.claims.length > 1
-          ? `<p class="drop-sub" style="margin-top:12px">Also claimed at position${
-              result.claims.length > 2 ? "s" : ""} ${
-              result.claims.slice(1).map((c) => c.position).join(", ")
-            }. The log records claims; priority is the earliest position.</p>`
-          : ""}
-      </div>
-    </div>`;
-  el("cli").textContent = `certifiles verify --fingerprint ${fingerprint} --offline`;
-}
-
-function escape(text) {
-  const node = document.createElement("div");
-  node.textContent = text ?? "";
-  return node.innerHTML;
-}
-
-async function lookup(fingerprint) {
-  working("checking the published log…");
-  try {
-    render(await verifyFingerprint(BASE, fingerprint), fingerprint);
-  } catch (error) {
-    render({ status: Status.UNVERIFIED, detail: `Could not complete the check: ${error.message}` },
-           fingerprint);
-  }
-  working("");
-}
-
-el("form").addEventListener("submit", (event) => {
-  event.preventDefault();
-  const value = el("hash").value.trim().toLowerCase().replace(/^sha256:/, "");
-  if (!isContentHash(value)) {
-    render({ status: Status.INVALID, detail: "That is not a SHA-256 fingerprint — expected 64 hex characters." }, value || "—");
-    return;
-  }
-  lookup(value);
-});
-
-async function handleFile(file) {
-  working(`hashing ${file.name} in your browser…`);
-  const fingerprint = await hashFile(file, (p) => working(`hashing ${file.name}… ${Math.round(p * 100)}%`));
-  el("hash").value = fingerprint;
-  await lookup(fingerprint);
-}
-
-el("drop").addEventListener("click", () => el("file").click());
-el("drop").addEventListener("keydown", (e) => {
-  if (e.key === "Enter" || e.key === " ") { e.preventDefault(); el("file").click(); }
-});
-el("file").addEventListener("change", (e) => e.target.files[0] && handleFile(e.target.files[0]));
-for (const type of ["dragenter", "dragover"]) {
-  el("drop").addEventListener(type, (e) => { e.preventDefault(); el("drop").classList.add("over"); });
-}
-for (const type of ["dragleave", "drop"]) {
-  el("drop").addEventListener(type, (e) => { e.preventDefault(); el("drop").classList.remove("over"); });
-}
-el("drop").addEventListener("drop", (e) => e.dataTransfer.files[0] && handleFile(e.dataTransfer.files[0]));
-
-const preset = new URLSearchParams(location.search).get("q");
-if (preset) { el("hash").value = preset; lookup(preset.toLowerCase()); }
-</script>
+<script type="module" src="./pages/index.js"></script>
 </body>
 </html>
