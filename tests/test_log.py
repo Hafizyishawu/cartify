@@ -162,6 +162,36 @@ class TestAppendOnly(LogTestCase):
             self.assertEqual(len(positions), 48)
             self.assertEqual(sorted(positions), list(range(48)))
 
+    def test_one_connection_shared_across_threads_stays_gapless(self):
+        # The HTTP service handles each request in its own thread against a
+        # single store. Statement-level serialisation does not make the
+        # read-size-then-insert sequence atomic, so append holds a lock; without
+        # it two threads compute the same position.
+        import threading
+
+        positions, errors = [], []
+        lock = threading.Lock()
+
+        def worker(worker_id):
+            try:
+                for i in range(10):
+                    entry = self.log.append(record(worker_id * 100 + i))
+                    with lock:
+                        positions.append(entry.position)
+            except Exception as exc:
+                with lock:
+                    errors.append(repr(exc))
+
+        threads = [threading.Thread(target=worker, args=(n,)) for n in range(6)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+        self.assertEqual(errors, [])
+        self.assertEqual(sorted(positions), list(range(60)))
+        self.log.check_integrity()
+
     def test_a_failed_append_leaves_no_gap(self):
         self.log.append(record(1))
         with self.assertRaises(RecordError):

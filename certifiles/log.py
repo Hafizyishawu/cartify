@@ -25,6 +25,7 @@ position: `claims_for` returns every claim in order, earliest first.
 from __future__ import annotations
 
 import sqlite3
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -80,9 +81,16 @@ class LogEntry:
 
 class TransparencyLog:
     def __init__(self, path: str | Path = ":memory:") -> None:
-        self._connection = sqlite3.connect(str(path), isolation_level=None)
+        self._connection = sqlite3.connect(
+            str(path), isolation_level=None, check_same_thread=False
+        )
         self._connection.execute("PRAGMA journal_mode=WAL")
         self._connection.execute("PRAGMA foreign_keys=ON")
+        # Statement-level serialisation does not make a multi-statement
+        # transaction atomic against another thread's. append() holds this for
+        # the whole read-size-then-insert sequence, which is what stops two
+        # concurrent writers computing the same position.
+        self._write_lock = threading.Lock()
         self._connection.executescript(SCHEMA)
         self.check_integrity()
 
@@ -118,6 +126,10 @@ class TransparencyLog:
         # because the duplicate insert is refused rather than silently applied.
         # IMMEDIATE turns that late, confusing failure into no contention at
         # all, which is why it stays.
+        with self._write_lock:
+            return self._append_locked(record, data, digest)
+
+    def _append_locked(self, record: Record, data: bytes, digest: bytes) -> LogEntry:
         self._connection.execute("BEGIN IMMEDIATE")
         try:
             row = self._connection.execute(
