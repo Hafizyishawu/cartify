@@ -307,6 +307,19 @@ class TestAdversarialFindings(unittest.TestCase):
             with self.subTest(case=f"consistency {case}"):
                 self.assertFalse(verify_consistency(*args))
 
+    def test_an_absurd_tree_size_is_rejected_not_a_crash(self):
+        # tree_size is read verbatim from published JSON on a static host, so a
+        # hostile mirror could exhaust the stack of every offline verifier.
+        leaves = leaves_for(4)
+        root = root_hash(leaves)
+        proof = inclusion_proof(leaves, 0)
+        for bits in (1_329, 20_001, 100_000):
+            with self.subTest(bits=bits):
+                self.assertFalse(verify_inclusion(leaves[0], 0, 1 << bits, proof, root))
+                self.assertFalse(
+                    verify_consistency(1, 1 << bits, proof, root, root)
+                )
+
     def test_empty_old_tree_requires_the_empty_root(self):
         # A witness bootstrapping from zero got the same True for "verified"
         # and "checked nothing", so it would cosign any root offered.

@@ -21,6 +21,12 @@ NODE_PREFIX = b"\x01"
 HASH_SIZE = hashlib.sha256().digest_size
 EMPTY_ROOT = hashlib.sha256(b"").digest()
 
+# A tree size is read verbatim from published JSON on a static host, so a
+# hostile mirror can put anything there. Beyond this the value is not a tree
+# size at all, and admitting it only gives an attacker a way to exhaust the
+# verifier rather than be rejected by it.
+MAX_TREE_SIZE = 1 << 63
+
 
 def _is_hash(value: object) -> bool:
     return isinstance(value, (bytes, bytearray)) and len(value) == HASH_SIZE
@@ -37,13 +43,21 @@ def _inclusion_proof_length(index: int, size: int) -> int:
 
     Binding the proof to the tree size means a proof cannot be presented
     against a size it was not issued for.
+
+    Iterative rather than recursive: this runs once per bit of the tree size,
+    and a size taken from untrusted published data would otherwise exhaust the
+    stack before any bound could reject it.
     """
-    if size == 1:
-        return 0
-    k = _split_point(size)
-    if index < k:
-        return 1 + _inclusion_proof_length(index, k)
-    return 1 + _inclusion_proof_length(index - k, size - k)
+    length = 0
+    while size > 1:
+        k = _split_point(size)
+        if index < k:
+            size = k
+        else:
+            index -= k
+            size -= k
+        length += 1
+    return length
 
 
 def leaf_hash(data: bytes) -> bytes:
@@ -123,7 +137,9 @@ def verify_inclusion(
     # walk the all-right-siblings path, so it aliases the last index whenever
     # that index is all ones in binary, and the function would return True for a
     # false statement.
-    if tree_size < 1 or not 0 <= index < tree_size:
+    if tree_size < 1 or tree_size > MAX_TREE_SIZE:
+        return False
+    if not 0 <= index < tree_size:
         return False
     if not _is_hash(leaf) or not _is_hash(root):
         return False
@@ -174,6 +190,8 @@ def verify_consistency(
     if not _is_hash(old_root) or not _is_hash(new_root):
         return False
     if old_size < 0 or new_size < 0 or old_size > new_size:
+        return False
+    if new_size > MAX_TREE_SIZE:
         return False
     try:
         nodes = list(proof)

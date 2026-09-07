@@ -320,6 +320,10 @@ class TestTamperDetection(unittest.TestCase):
             with self.assertRaises(LogError) as caught:
                 TransparencyLog(path)
             self.assertIn("not contiguous", str(caught.exception))
+            # __init__ raised after connecting, so nothing closed the handle.
+            import gc
+
+            gc.collect()
 
     def test_a_gapped_log_never_serves_a_proof(self):
         # The failure that matters: every leaf after a gap shifts, so proofs
@@ -331,7 +335,11 @@ class TestTamperDetection(unittest.TestCase):
             try:
                 log = TransparencyLog(path)
             except LogError:
+                import gc
+
+                gc.collect()
                 return  # refused at the door, which is the stronger outcome
+            self.addCleanup(log.close)
             for call in (log.root, lambda: log.inclusion_proof(0), log.size):
                 with self.assertRaises(LogError):
                     call()

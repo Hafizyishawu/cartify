@@ -101,6 +101,19 @@ class TestBackdatingBound(unittest.TestCase):
         with self.assertRaises(AnchorError):
             backdating_bound([receipt(5, 1, attested=1)], -1)
 
+    def test_a_receipt_for_a_history_the_log_never_held_cannot_bound(self):
+        # A bound resting on a root that never existed is a bound resting on
+        # nothing.
+        honest = receipt(10, 1, attested=1, root=ROOT_A)
+        forged = receipt(10, 1, attested=1, root=ROOT_B)
+
+        def root_at(size):
+            return ROOT_A
+
+        self.assertIsNotNone(backdating_bound([forged], 5))
+        self.assertIsNone(backdating_bound([forged], 5, root_at=root_at))
+        self.assertIsNotNone(backdating_bound([honest], 5, root_at=root_at))
+
     def test_evidence_filter_excludes_unconfirmed(self):
         anchors = [receipt(10, 1, attested=1), receipt(20, 2)]
         self.assertEqual(len(evidence_only(anchors)), 1)

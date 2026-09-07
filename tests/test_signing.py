@@ -47,6 +47,8 @@ class TestEd25519(unittest.TestCase):
         self.verifier = Ed25519Verifier()
         self.log = InMemoryEd25519Signer.from_seed("example/log", b"\x09" * 32)
         self.policy = WitnessPolicy(
+            version=1,
+            effective_from_size=0,
             log_key_name="example/log",
             log_public_key=self.log.public_key,
             witnesses={

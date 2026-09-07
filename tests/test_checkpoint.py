@@ -11,6 +11,7 @@ import unittest
 
 from certifiles.checkpoint import (
     Checkpoint,
+    policy_in_force,
     CheckpointError,
     Signature,
     SignedCheckpoint,
@@ -151,6 +152,8 @@ class TestSignatureValidation(unittest.TestCase):
         signer = StubSigner("witness-a", b"\x11" * 32)
         signed = add_signature(SignedCheckpoint(checkpoint()), sign(checkpoint(), signer))
         pol = WitnessPolicy(
+            version=1,
+            effective_from_size=0,
             log_key_name="certifiles.example/log",
             log_public_key=b"\x99" * 32,
             witnesses={"witness-b": b"\x22" * 32},
@@ -325,6 +328,8 @@ KEY_B = b"\x22" * 32
 
 def policy(required: int = 1, **overrides) -> WitnessPolicy:
     fields = {
+        "version": 1,
+        "effective_from_size": 0,
         "log_key_name": "certifiles.example/log",
         "log_public_key": LOG_KEY,
         "witnesses": {"witness-a": KEY_A, "witness-b": KEY_B},
@@ -369,6 +374,34 @@ class TestWitnessPolicy(unittest.TestCase):
 
     def test_valid_policy_constructs(self):
         policy(required=2)
+
+    def test_a_policy_must_carry_a_version_and_an_effective_size(self):
+        # ADR 0001 rules 2 and 3: a policy takes effect at a tree size, and a
+        # record's assurance comes from the version in force at its size. A
+        # policy that could only express "now" made both unenforceable.
+        for bad in ({"version": 0}, {"version": -1}, {"effective_from_size": -1}):
+            with self.subTest(**bad):
+                with self.assertRaises(CheckpointError):
+                    policy(**bad)
+
+    def test_the_policy_in_force_is_chosen_by_tree_size(self):
+        first = policy(version=1, effective_from_size=0, required=0, witnesses={})
+        second = policy(version=2, effective_from_size=4_000, required=2)
+        policies = [first, second]
+        self.assertEqual(policy_in_force(policies, 0).version, 1)
+        self.assertEqual(policy_in_force(policies, 3_999).version, 1)
+        self.assertEqual(policy_in_force(policies, 4_000).version, 2)
+        self.assertEqual(policy_in_force(policies, 9_999).version, 2)
+
+    def test_a_size_before_any_policy_is_refused_not_defaulted(self):
+        # Defaulting would silently assign an assurance level to a record that
+        # no policy ever covered.
+        with self.assertRaises(CheckpointError):
+            policy_in_force([policy(effective_from_size=100)], 50)
+
+    def test_policy_selection_needs_a_policy(self):
+        with self.assertRaises(CheckpointError):
+            policy_in_force([], 0)
 
     def test_counting_dedupes_by_key_even_if_the_policy_is_bypassed(self):
         # verified_witnesses is documented as the second of two barriers. The

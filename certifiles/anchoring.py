@@ -186,7 +186,7 @@ def evidence_only(receipts: Iterable[AnchorReceipt]) -> list[AnchorReceipt]:
 
 
 def backdating_bound(
-    receipts: Iterable[AnchorReceipt], position: int
+    receipts: Iterable[AnchorReceipt], position: int, root_at=None
 ) -> AnchorReceipt | None:
     """The earliest attested anchor proving the entry at `position` already existed.
 
@@ -198,10 +198,19 @@ def backdating_bound(
 
     None means the entry is anchored by nothing yet, which is a real state and
     must be reported rather than treated as unbounded-but-fine.
+
+    Pass `root_at` — TransparencyLog.root satisfies it — and receipts whose root
+    the log does not hold are excluded. Without it a receipt for a history that
+    never existed still produces a bound, which is a bound resting on nothing.
+    Callers that hold a log should always pass it.
     """
     if position < 0:
         raise AnchorError("position must not be negative")
-    covering = [r for r in evidence_only(receipts) if r.checkpoint_size > position]
+    usable = evidence_only(receipts)
+    if root_at is not None:
+        mismatched = {id(r) for r in diverged(usable, root_at)}
+        usable = [r for r in usable if id(r) not in mismatched]
+    covering = [r for r in usable if r.checkpoint_size > position]
     if not covering:
         return None
     return min(covering, key=lambda r: (r.attested_at, r.checkpoint_size))

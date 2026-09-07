@@ -287,12 +287,23 @@ class WitnessPolicy:
       authors — rather than the key.
     """
 
+    version: int
+    effective_from_size: int
     log_key_name: str
     log_public_key: bytes
     witnesses: Mapping[str, bytes]
     required: int
 
     def __post_init__(self) -> None:
+        # ADR 0001 rule 2: a policy takes effect at a tree size, not a
+        # wall-clock time, because wall-clock is operator controlled and tree
+        # size is not. Rule 3: a record's assurance is derived from the version
+        # in force at its size and never recomputed against the current policy.
+        # A policy type that could only express "now" made both unenforceable.
+        if not isinstance(self.version, int) or self.version < 1:
+            raise CheckpointError("policy version must be 1 or greater")
+        if not isinstance(self.effective_from_size, int) or self.effective_from_size < 0:
+            raise CheckpointError("effective_from_size must not be negative")
         if self.required < 0:
             raise CheckpointError("required quorum must not be negative")
         if self.required > len(self.witnesses):
@@ -386,3 +397,25 @@ def meets_quorum(
 def signature_key_names(signed: SignedCheckpoint) -> Sequence[str]:
     """Names claimed by the signature lines. Claimed, not verified."""
     return tuple(s.key_name for s in signed.signatures)
+
+
+def policy_in_force(
+    policies: Sequence[WitnessPolicy], tree_size: int
+) -> WitnessPolicy:
+    """The policy governing a checkpoint of `tree_size`.
+
+    Selecting by size rather than by "the current policy" is what makes ADR
+    0001 rule 3 true: a record keeps the assurance it actually had, and a later
+    policy change cannot retroactively restate it — upward or downward.
+    """
+    if not policies:
+        raise CheckpointError("no witness policy is defined")
+    if not isinstance(tree_size, int) or tree_size < 0:
+        raise CheckpointError("tree size must not be negative")
+    applicable = [p for p in policies if p.effective_from_size <= tree_size]
+    if not applicable:
+        raise CheckpointError(
+            f"no policy is in force at tree size {tree_size}; the earliest"
+            f" begins at {min(p.effective_from_size for p in policies)}"
+        )
+    return max(applicable, key=lambda p: (p.effective_from_size, p.version))
