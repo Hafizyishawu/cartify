@@ -1,0 +1,69 @@
+name: ci
+
+# Every push, so a failure is attached to the commit that caused it rather than
+# discovered at pull-request time on a branch with twenty commits on it.
+on:
+  push:
+  pull_request:
+    branches: [main]
+
+# Read-only. Nothing in this pipeline writes to the repository, and a workflow
+# that cannot write cannot be turned into one that does by a dependency.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Pinned so a new release cannot add a rule and fail an unrelated commit.
+  RUFF_VERSION: "0.16.6"
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.13"
+      - run: pip install "ruff==${RUFF_VERSION}"
+      - name: Lint and security rules
+        # Rule selection lives in pyproject.toml: pyflakes, syntax errors, and
+        # the flake8-bandit security set. Suppressions are inline with reasons.
+        run: ruff check .
+
+  test-python:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.11 is the floor, because StrEnum. 3.13 is what development runs on.
+        # Testing both catches syntax that only the newer one accepts.
+        python-version: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install the one runtime dependency
+        # certifiles imports cryptography lazily and nothing else beyond the
+        # standard library. requirements.txt also serves the legacy root
+        # scripts, so installing it here would pull in unrelated packages.
+        run: pip install "cryptography==50.0.1"
+      - name: Unit and integration tests
+        run: python -m unittest discover -s tests --verbose
+
+  test-javascript:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: "20"
+      - name: Cross-check the browser verifier against Python vectors
+        # The browser and the library must agree, or a record that verifies on
+        # the site fails for someone using the library and neither party can
+        # tell who is wrong.
+        run: node web/test/cross-check.mjs
