@@ -48,12 +48,18 @@ class ResolverError(RuntimeError):
 
 
 def _https_fetch(url: str, timeout: int) -> bytes:
-    request = urllib.request.Request(url, headers={
+    # urlopen honours whatever scheme it is handed. An endpoint that reached
+    # configuration as file: or ftp: would turn a DNS lookup into a local file
+    # read, so the scheme is checked here rather than trusted from config.
+    if not url.startswith("https://"):
+        raise ResolverError("a resolver endpoint must be https")
+    request = urllib.request.Request(url, headers={  # noqa: S310  scheme checked above
         "Accept": "application/dns-json",
         "User-Agent": "certifiles-domain-verification",
     })
     context = ssl.create_default_context()
-    with urllib.request.urlopen(request, timeout=timeout, context=context) as response:
+    with urllib.request.urlopen(  # noqa: S310  scheme checked above
+            request, timeout=timeout, context=context) as response:
         if response.status != 200:
             raise ResolverError(f"resolver answered {response.status}")
         return response.read(MAX_RESPONSE_BYTES + 1)
@@ -83,6 +89,12 @@ class DohResolver:
     endpoint: str
     timeout: int = DEFAULT_TIMEOUT
     fetch: Callable[[str, int], bytes] = _https_fetch
+
+    def __post_init__(self) -> None:
+        # Fail at construction, so a misconfigured endpoint is a startup error
+        # rather than a lookup that quietly reads something it should not.
+        if not self.endpoint.startswith("https://"):
+            raise ResolverError("a resolver endpoint must be https")
 
     def txt(self, name: str) -> Sequence[str]:
         if not isinstance(name, str) or not name:

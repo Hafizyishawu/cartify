@@ -10,6 +10,7 @@ import json
 import unittest
 
 from certifiles.doh import (
+    DEFAULT_ENDPOINTS,
     MAX_RESPONSE_BYTES,
     AgreeingResolver,
     DohResolver,
@@ -119,6 +120,20 @@ class DohParsingTests(unittest.TestCase):
         with self.assertRaises(ResolverError):
             resolver.txt("")
         self.assertEqual(called, [])
+
+    def test_a_non_https_endpoint_is_refused_at_construction(self):
+        # urlopen honours whatever scheme it is given, so an endpoint that
+        # reached configuration as file: would turn a lookup into a local file
+        # read. Refusing at construction makes it a startup error.
+        for endpoint in ("file:///etc/passwd", "http://example.invalid",
+                         "ftp://example.invalid", "example.invalid"):
+            with self.subTest(endpoint=endpoint):
+                with self.assertRaises(ResolverError):
+                    DohResolver(endpoint)
+
+    def test_the_default_endpoints_are_all_https(self):
+        for endpoint in DEFAULT_ENDPOINTS:
+            self.assertTrue(endpoint.startswith("https://"), endpoint)
 
     def test_the_name_is_url_encoded_into_the_query(self):
         seen = {}
