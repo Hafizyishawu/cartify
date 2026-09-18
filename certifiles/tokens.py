@@ -37,7 +37,7 @@ RECOVERY_CODE_BYTES = 5
 
 class TokenPurpose(StrEnum):
     EMAIL_VERIFICATION = "email_verification"
-    PASSWORD_RESET = "password_reset"
+    PASSWORD_RESET = "password_reset"  # noqa: S105  purpose name, not a secret
     RECOVERY_CODE = "recovery_code"
 
 

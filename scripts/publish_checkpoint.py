@@ -91,7 +91,7 @@ def publish(data: Path, site: Path, origin: str, dry_run: bool) -> int:
 
         if dry_run:
             print(f"  would publish size {size}, root {log.root().hex()[:16]}…")
-            print(f"  stage 0: no witnesses, so records report weaker assurance")
+            print("  stage 0: no witnesses, so records report weaker assurance")
             return 0
 
         report = StaticPublication(site).publish(

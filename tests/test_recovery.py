@@ -8,7 +8,6 @@ import unittest
 
 from certifiles.accounts import AccountStore, MfaState, totp_code
 from certifiles.domains import (
-    Challenge,
     DomainError,
     challenge_for,
     new_server_secret,

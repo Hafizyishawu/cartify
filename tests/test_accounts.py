@@ -11,7 +11,6 @@ import unittest
 from certifiles.accounts import (
     MIN_PASSWORD_LENGTH,
     TOTP_PERIOD,
-    Account,
     AccountError,
     AccountStore,
     MfaState,
@@ -321,6 +320,8 @@ class TestSessions(unittest.TestCase):
         new = self.store.create("acct-2", mfa_passed=True, now=self.now + 10_000)
         self.assertEqual(self.store.purge_expired(now=self.now + SESSION_TTL_SECONDS + 1), 1)
         self.assertIsNotNone(self.store.resolve(new, now=self.now + 10_001))
+        # The count alone would pass if purge removed the wrong one.
+        self.assertIsNone(self.store.resolve(old, now=self.now + 10_001))
 
 
 class TestRateLimiting(unittest.TestCase):

@@ -276,7 +276,7 @@ class TestStrictParsing(unittest.TestCase):
             try:
                 if base64.b64decode(variant, validate=True) != ROOT:
                     continue
-            except Exception:
+            except Exception:  # noqa: S112  variants that do not decode are not the case under test
                 continue
             tried += 1
             data = self.valid_bytes().replace(good.encode(), variant.encode(), 1)

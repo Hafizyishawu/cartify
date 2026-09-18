@@ -35,7 +35,6 @@ def phash(value: str) -> Fingerprint:
 
 def flip(value: str, bits: int) -> str:
     """Same fingerprint with `bits` bits changed."""
-    width = len(value) * 4
     mask = (1 << bits) - 1
     return f"{int(value, 16) ^ mask:0{len(value)}x}"
 

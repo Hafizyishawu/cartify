@@ -1,0 +1,40 @@
+[tool.ruff]
+# StrEnum is 3.11. Anything older will not import this package at all.
+target-version = "py311"
+line-length = 90
+
+# The four cartify_*.py and drive_upload.py scripts at the repository root are
+# the previous generation of this tool. They are kept for provenance, are not
+# part of the certifiles package, and are not maintained to its standards.
+# Delete them or move them under legacy/ rather than widening this list.
+exclude = [
+    "cartify_embed_stego.py",
+    "cartify_extract_stego.py",
+    "cartify_watcher_2.0.3.py",
+    "drive_upload.py",
+]
+
+[tool.ruff.lint]
+# A deliberately narrow set that the codebase passes today, so the gate is real
+# from the first run rather than a wall of findings nobody acts on.
+#
+#   F   pyflakes: dead imports, unused names, genuine mistakes
+#   E9  syntax and IO errors
+#   S   flake8-bandit: the security rules
+#
+# The remaining default rules report about 70 findings, almost all style and
+# typing modernisation. They are worth a dedicated cleanup pass and are not
+# worth blocking a pipeline on before that pass happens. Widen this list when
+# the cleanup lands, not before.
+select = ["F", "E9", "S"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = [
+    # Test constants named PASSWORD are fixtures, not credentials.
+    "S105",
+    # The service tests drive real HTTP against a loopback server on purpose.
+    "S310",
+    # Fixture data is generated with `random` for reproducibility, not secrecy.
+    "S311",
+]
+"scripts/*" = ["S310"]

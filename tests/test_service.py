@@ -14,7 +14,7 @@ import urllib.request
 from http.cookies import SimpleCookie
 from pathlib import Path
 
-from certifiles.accounts import AccountStore, MfaState, totp_code
+from certifiles.accounts import AccountStore, totp_code
 from certifiles.log import TransparencyLog
 from certifiles.ratelimit import DOMAIN_CHECK, SIGN_IN, WORK_REGISTRATION, RateLimiter
 from certifiles.record import AssuranceLevel

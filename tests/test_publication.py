@@ -247,7 +247,7 @@ class TestAuditRegressions(PublicationTestCase):
     def signed(self, size=None, *names):
         import hashlib
 
-        from certifiles.checkpoint import Signature, add_signature, key_hash, sign
+        from certifiles.checkpoint import add_signature, sign
 
         class Stub:
             def __init__(self, name):

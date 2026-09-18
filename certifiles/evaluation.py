@@ -32,8 +32,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from enum import StrEnum
-from pathlib import Path
-from typing import Iterable, Mapping, Sequence
+from typing import Sequence
 
 from certifiles.fingerprint import (
     LOW_QUALITY_CEILING,

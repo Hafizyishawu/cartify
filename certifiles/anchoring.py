@@ -30,7 +30,7 @@ import sqlite3
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
-from typing import Iterable, Protocol, Sequence
+from typing import Iterable, Protocol
 
 from certifiles.checkpoint import Checkpoint
 

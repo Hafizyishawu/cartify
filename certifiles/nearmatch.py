@@ -31,7 +31,7 @@ unfounded.
 from __future__ import annotations
 
 import sqlite3
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 from typing import Iterable, Mapping, Sequence
@@ -181,8 +181,10 @@ class NearMatchIndex:
         stored: dict[int, dict[FingerprintKind, Fingerprint]] = {}
         qualities: dict[int, int] = {}
 
+        # The f-string interpolates placeholders, never values. Every value goes
+        # through `parameters` and is bound by sqlite3.
         sql = (
-            "SELECT position, kind, value, quality FROM fingerprints WHERE kind IN"
+            "SELECT position, kind, value, quality FROM fingerprints WHERE kind IN"  # noqa: S608
             f" ({','.join('?' * len(by_kind))})"
         )
         parameters: list = [str(k) for k in by_kind]
