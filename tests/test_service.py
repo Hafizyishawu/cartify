@@ -350,6 +350,44 @@ class TestRegisteringWork(ServiceTestCase):
         self.assertNotIn("someone-elses-identity", leaf)
 
 
+class TestNotFound(ServiceTestCase):
+    """A dead link is the common way to arrive at a 404 on this product.
+
+    404.html exists to say that a stale record link does not mean the record is
+    fake, which is the wrong thing to answer with a JSON blob.
+    """
+
+    def setUp(self):
+        super().setUp()
+        (self.services.web_root / "404.html").write_text("<h1>no such page</h1>")
+
+    def test_a_missing_page_serves_the_404_page(self):
+        status, body = self.client.request("GET", "/gone.html", csrf=False)
+        self.assertEqual(status, 404)
+        self.assertIn("no such page", body.get("raw", ""))
+
+    def test_a_path_with_no_extension_serves_the_404_page(self):
+        status, body = self.client.request("GET", "/r/12345", csrf=False)
+        self.assertEqual(status, 404)
+        self.assertIn("no such page", body.get("raw", ""))
+
+    def test_a_missing_asset_still_answers_json(self):
+        # Rendering a page into a fetch would misreport what actually failed.
+        status, body = self.client.request("GET", "/missing.js", csrf=False)
+        self.assertEqual(status, 404)
+        self.assertEqual(body.get("error"), "Not found.")
+
+    def test_the_404_page_carries_the_security_headers(self):
+        request = urllib.request.Request(f"{self.client.base}/gone.html")
+        try:
+            urllib.request.urlopen(request)
+            self.fail("expected 404")
+        except urllib.error.HTTPError as error:
+            self.assertEqual(error.code, 404)
+            self.assertEqual(error.headers["X-Content-Type-Options"], "nosniff")
+            self.assertIn("default-src", error.headers["Content-Security-Policy"])
+
+
 class TestSessionHandling(ServiceTestCase):
     def test_a_forged_cookie_is_not_a_session(self):
         self.client.cookie = "a" * 43

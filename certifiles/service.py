@@ -556,11 +556,33 @@ class Handler(BaseHTTPRequestHandler):
         # A path that escapes the web root is not a missing file, it is an
         # attempt, and it gets the same 404 either way.
         if not str(target).startswith(str(root)) or not target.is_file():
-            return self._send_json(404, {"error": "Not found."})
+            return self._send_not_found(path)
         body = target.read_bytes()
         kind = mimetypes.guess_type(target.name)[0] or "application/octet-stream"
         self.send_response(200)
         self.send_header("Content-Type", kind)
+        self.send_header("Content-Length", str(len(body)))
+        for header, value in SECURITY_HEADERS.items():
+            self.send_header(header, value)
+        self.end_headers()
+        self.wfile.write(body)
+
+
+    def _send_not_found(self, path: str):
+        """404.html for a page request, JSON for anything else.
+
+        A stale record link is the common way to arrive here, and 404.html
+        exists to say that a dead link does not mean the record is fake. A
+        missing script or data file gets JSON, because rendering a page into a
+        fetch would be a confusing lie about what failed.
+        """
+        page = self.services.web_root.resolve() / "404.html"
+        wants_page = path.endswith(".html") or "." not in path.rsplit("/", 1)[-1]
+        if not wants_page or not page.is_file():
+            return self._send_json(404, {"error": "Not found."})
+        body = page.read_bytes()
+        self.send_response(404)
+        self.send_header("Content-Type", "text/html")
         self.send_header("Content-Length", str(len(body)))
         for header, value in SECURITY_HEADERS.items():
             self.send_header(header, value)
