@@ -273,7 +273,7 @@ class TestRegisteringWork(ServiceTestCase):
     def payload(self, sha=SHA):
         return {
             "sha256": sha, "media_type": "image/png", "size_bytes": 1024,
-            "fingerprints": {"phash": "c3a90f7e21b45d80"}, "quality": 84,
+            "similarity_fingerprints": {"phash": "c3a90f7e21b45d80"}, "quality": 84,
             "claim_type": "created",
         }
 

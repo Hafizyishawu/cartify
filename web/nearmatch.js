@@ -1,6 +1,6 @@
 // Near-match banding in the browser, mirroring certifiles/nearmatch.py.
 //
-// Fingerprints live inside the record, so they are covered by the inclusion
+// Similarity fingerprints live inside the record, so they are covered by the inclusion
 // proof. That means a browser can run this search over verified data rather
 // than trusting a server's similarity score. The operator cannot quietly
 // revise the numbers an artist is searching on.
@@ -33,7 +33,7 @@ export const Band = Object.freeze({
 const ORDER = { strong_candidate: 0, possible: 1, weak: 2 };
 
 export function distance(a, b) {
-  if (a.length !== b.length) throw new Error("fingerprints of different widths");
+  if (a.length !== b.length) throw new Error("similarity fingerprints of different widths");
   let bits = 0;
   for (let i = 0; i < a.length; i += 1) {
     let x = parseInt(a[i], 16) ^ parseInt(b[i], 16);
@@ -84,7 +84,7 @@ const closest = (distances) =>
  * something registered earlier cannot be a copy of it.
  */
 export function search(subject, entries, { afterPosition = null, limit = 25 } = {}) {
-  const mine = subject.content?.fingerprints ?? {};
+  const mine = subject.content?.similarity_fingerprints ?? {};
   if (Object.keys(mine).length === 0) return [];
 
   const candidates = [];
@@ -93,7 +93,7 @@ export function search(subject, entries, { afterPosition = null, limit = 25 } = 
     if (afterPosition !== null && entry.position <= afterPosition) continue;
     if (entry.record.issuer.identity_id === subject.record.issuer.identity_id) continue;
 
-    const theirs = entry.record.content?.fingerprints ?? {};
+    const theirs = entry.record.content?.similarity_fingerprints ?? {};
     const distances = {};
     for (const kind of Object.keys(mine)) {
       if (theirs[kind]) distances[kind] = distance(mine[kind], theirs[kind]);

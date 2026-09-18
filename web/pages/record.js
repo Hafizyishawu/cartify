@@ -29,7 +29,7 @@ if (!result.record) {
 } else {
   const r = result.record;
   const anchor = (result.anchors?.anchors ?? []).find((a) => a.attested_at !== null);
-  const fingerprints = Object.entries(r.content.fingerprints ?? {})
+  const fingerprints = Object.entries(r.content.similarity_fingerprints ?? {})
     .map(([k, v]) => `${k}:${v}`).join(" · ");
 
   document.getElementById("out").innerHTML = `
@@ -50,9 +50,9 @@ if (!result.record) {
     </div>
 
     <dl class="ledger">
-      ${row("Content fingerprint", `sha256:${r.content.sha256}`)}
-      ${row("Perceptual fingerprints", fingerprints || "none captured")}
-      ${row("Fingerprint quality", r.content.quality != null
+      ${row("Content hash", `sha256:${r.content.sha256}`)}
+      ${row("Similarity fingerprints", fingerprints || "none captured")}
+      ${row("Similarity quality", r.content.quality != null
             ? `${r.content.quality}/100: ${r.content.quality < 35
                 ? "low detail, near-match comparison is unreliable"
                 : "sufficient detail for near-match comparison"}` : null)}

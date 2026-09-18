@@ -92,7 +92,7 @@
 
   <h1>Check what the log says about a file</h1>
   <p class="lede">Drop the file in. Certifiles never receives it: your browser computes the
-    fingerprint and looks that up. Every check that decides the answer runs here, not on our
+    content hash and looks that up. Every check that decides the answer runs here, not on our
     server.</p>
 
   <div class="drop" id="drop" tabindex="0" role="button"
@@ -103,10 +103,10 @@
   </div>
   <input type="file" id="file" class="hidden">
 
-  <div class="or">or paste a fingerprint</div>
+  <div class="or">or paste a content hash</div>
   <form id="form">
     <input id="hash" placeholder="64 hex characters, e.g. 9f2c41ab…"
-           aria-label="SHA-256 fingerprint" spellcheck="false" autocomplete="off">
+           aria-label="SHA-256 content hash" spellcheck="false" autocomplete="off">
     <button type="submit">Look up</button>
   </form>
 

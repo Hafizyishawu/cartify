@@ -5,7 +5,7 @@ interface shows artists a confidence band, which is an accuracy claim. This is
 the instrument that turns the guess into a number.
 
 **Building this closes nothing. Running it on real data does.** A harness that
-has only ever seen modelled fingerprints proves the harness works, which is not
+has only ever seen modelled similarity fingerprints proves the harness works, which is not
 the same as proving the thresholds are right — so a dataset carries its
 provenance, and a report refuses to recommend an operating point from anything
 but measured data.
@@ -23,7 +23,7 @@ What it measures, and why these and not accuracy:
   on.
 
 Fingerprinting images is the client's job and needs an imaging library, so this
-module works on fingerprints that have already been computed. Producing a
+module works on similarity fingerprints that have already been computed. Producing a
 measured dataset is a separate pipeline; the format it must emit is here.
 """
 
@@ -34,10 +34,10 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Sequence
 
-from certifiles.fingerprint import (
+from certifiles.similarity import (
     LOW_QUALITY_CEILING,
-    Fingerprint,
-    FingerprintKind,
+    SimilarityFingerprint,
+    SimilarityKind,
 )
 from certifiles.nearmatch import LOOSE, TIGHT, Band, classify
 
@@ -49,7 +49,7 @@ class EvaluationError(RuntimeError):
 
 
 class Provenance(StrEnum):
-    """Where a dataset's fingerprints came from.
+    """Where a dataset's similarity fingerprints came from.
 
     MEASURED means real images went through a real fingerprinter. MODELLED
     means the distances were constructed to exercise this code. Only the first
@@ -64,7 +64,7 @@ class Provenance(StrEnum):
 @dataclass(frozen=True, slots=True)
 class Sample:
     work_id: str
-    fingerprints: tuple[Fingerprint, ...]
+    similarity_fingerprints: tuple[SimilarityFingerprint, ...]
     quality: int
 
 
@@ -75,9 +75,9 @@ class Pair:
     same_work: bool
     transform: str
 
-    def distances(self) -> dict[FingerprintKind, int]:
-        left = {f.kind: f for f in self.left.fingerprints}
-        right = {f.kind: f for f in self.right.fingerprints}
+    def distances(self) -> dict[SimilarityKind, int]:
+        left = {f.kind: f for f in self.left.similarity_fingerprints}
+        right = {f.kind: f for f in self.right.similarity_fingerprints}
         shared = set(left) & set(right)
         if not shared:
             raise EvaluationError(
@@ -144,7 +144,7 @@ def _sample_json(sample: Sample) -> dict:
     return {
         "work_id": sample.work_id,
         "quality": sample.quality,
-        "fingerprints": {str(f.kind): f.value for f in sample.fingerprints},
+        "similarity_fingerprints": {str(f.kind): f.value for f in sample.similarity_fingerprints},
     }
 
 
@@ -152,9 +152,9 @@ def _sample_from_json(payload: dict) -> Sample:
     return Sample(
         work_id=payload["work_id"],
         quality=payload["quality"],
-        fingerprints=tuple(
-            Fingerprint(FingerprintKind(kind), value)
-            for kind, value in sorted(payload["fingerprints"].items())
+        similarity_fingerprints=tuple(
+            SimilarityFingerprint(SimilarityKind(kind), value)
+            for kind, value in sorted(payload["similarity_fingerprints"].items())
         ),
     )
 

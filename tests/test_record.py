@@ -10,7 +10,7 @@ import json
 import unittest
 
 from certifiles.merkle import leaf_hash
-from certifiles.fingerprint import Fingerprint, FingerprintKind
+from certifiles.similarity import SimilarityFingerprint, SimilarityKind
 from certifiles.record import (
     AssuranceLevel,
     ClaimType,
@@ -100,12 +100,12 @@ class TestFieldSensitivity(unittest.TestCase):
             "size_bytes": sample(
                 content=Content(sha256=VALID_SHA, media_type="image/png", size_bytes=1025)
             ),
-            "fingerprints": sample(
+            "similarity_fingerprints": sample(
                 content=Content(
                     sha256=VALID_SHA,
                     media_type="image/png",
                     size_bytes=1024,
-                    fingerprints=(Fingerprint(FingerprintKind.PHASH, "c3a90f7e21b45d80"),),
+                    similarity_fingerprints=(SimilarityFingerprint(SimilarityKind.PHASH, "c3a90f7e21b45d80"),),
                 )
             ),
             "quality": sample(
@@ -129,15 +129,15 @@ class TestFieldSensitivity(unittest.TestCase):
     def test_fingerprint_order_does_not_change_the_leaf(self):
         # Keyed by algorithm, so two clients listing them differently produce
         # identical bytes and identical proofs.
-        a = Fingerprint(FingerprintKind.PHASH, "c3a90f7e21b45d80")
-        b = Fingerprint(FingerprintKind.DHASH, "9e2b17c0da45f381")
+        a = SimilarityFingerprint(SimilarityKind.PHASH, "c3a90f7e21b45d80")
+        b = SimilarityFingerprint(SimilarityKind.DHASH, "9e2b17c0da45f381")
         first = sample(content=Content(VALID_SHA, "image/png", 10, (a, b), 80))
         second = sample(content=Content(VALID_SHA, "image/png", 10, (b, a), 80))
         self.assertEqual(first.leaf_data(), second.leaf_data())
 
     def test_duplicate_fingerprint_kinds_are_rejected(self):
-        a = Fingerprint(FingerprintKind.PHASH, "c3a90f7e21b45d80")
-        b = Fingerprint(FingerprintKind.PHASH, "0000000000000000")
+        a = SimilarityFingerprint(SimilarityKind.PHASH, "c3a90f7e21b45d80")
+        b = SimilarityFingerprint(SimilarityKind.PHASH, "0000000000000000")
         with self.assertRaises(RecordError):
             validate(sample(content=Content(VALID_SHA, "image/png", 10, (a, b), 80)))
 

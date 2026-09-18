@@ -64,16 +64,16 @@ class Site {
 }
 
 /**
- * Look up a fingerprint and verify every claim on it.
+ * Look up a content hash and verify every claim on it.
  *
- * Returns one result per claim, earliest first. A fingerprint may carry more
+ * Returns one result per claim, earliest first. A content hash may carry more
  * than one claim. The log records claims and priority is position, so the
  * honest answer is "first registered by X, also claimed by Y" rather than a
  * winner picked here.
  */
-export async function verifyFingerprint(baseUrl, contentHash) {
+export async function verifyContentHash(baseUrl, contentHash) {
   if (!isContentHash(contentHash)) {
-    return { status: Status.INVALID, detail: "That is not a SHA-256 fingerprint." };
+    return { status: Status.INVALID, detail: "That is not a SHA-256 content hash." };
   }
   const site = new Site(baseUrl);
 
@@ -274,7 +274,7 @@ export async function verifyPosition(baseUrl, position) {
 /**
  * Every published record, for a client-side near-match search.
  *
- * Reads the whole log. Verifiable, because the fingerprints are inside records
+ * Reads the whole log. Verifiable, because the hashes are inside records
  * covered by the inclusion proof, so nothing here rests on a server's similarity
  * score. Also linear in log size, and a server-side index has to take over long
  * before the download becomes the problem. The interface says so rather than

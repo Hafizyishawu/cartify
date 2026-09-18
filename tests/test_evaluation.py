@@ -8,7 +8,7 @@ tests exist to hold in place.
 
 import unittest
 
-from certifiles.fingerprint import LOW_QUALITY_CEILING, Fingerprint, FingerprintKind
+from certifiles.similarity import LOW_QUALITY_CEILING, SimilarityFingerprint, SimilarityKind
 from certifiles.evaluation import (
     Counts,
     Dataset,
@@ -23,8 +23,8 @@ from certifiles.evaluation import (
 )
 from certifiles.nearmatch import Band
 
-PHASH = FingerprintKind.PHASH
-DHASH = FingerprintKind.DHASH
+PHASH = SimilarityKind.PHASH
+DHASH = SimilarityKind.DHASH
 BASE = "c3a90f7e21b45d80"
 
 
@@ -35,9 +35,9 @@ def flip(value: str, bits: int) -> str:
 def sample(work_id: str, bits: int = 0, quality: int = 90) -> Sample:
     return Sample(
         work_id=work_id,
-        fingerprints=(
-            Fingerprint(PHASH, flip(BASE, bits)),
-            Fingerprint(DHASH, flip(BASE, bits)),
+        similarity_fingerprints=(
+            SimilarityFingerprint(PHASH, flip(BASE, bits)),
+            SimilarityFingerprint(DHASH, flip(BASE, bits)),
         ),
         quality=quality,
     )
@@ -93,8 +93,8 @@ class TestDataset(unittest.TestCase):
     def test_pairs_sharing_no_algorithm_are_refused(self):
         # Silently scoring zero shared algorithms as "not similar" would count
         # a measurement failure as a true negative.
-        left = Sample("a", (Fingerprint(PHASH, BASE),), 90)
-        right = Sample("b", (Fingerprint(DHASH, BASE),), 90)
+        left = Sample("a", (SimilarityFingerprint(PHASH, BASE),), 90)
+        right = Sample("b", (SimilarityFingerprint(DHASH, BASE),), 90)
         with self.assertRaises(EvaluationError):
             Pair(left, right, True, "cross-algorithm").distances()
 
@@ -163,8 +163,8 @@ class TestEvaluate(unittest.TestCase):
             right=Sample(
                 "candidate",
                 (
-                    Fingerprint(PHASH, flip(BASE, 14)),
-                    Fingerprint(DHASH, flip(BASE, 40)),
+                    SimilarityFingerprint(PHASH, flip(BASE, 14)),
+                    SimilarityFingerprint(DHASH, flip(BASE, 40)),
                 ),
                 90,
             ),

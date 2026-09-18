@@ -1,5 +1,5 @@
 import { mountNav, escapeHtml } from "../site.js";
-import { post, me, fingerprintFile } from "../api.js";
+import { post, me, contentHashFile } from "../api.js";
 mountNav("register-work.html");
 
 let prepared = null;
@@ -26,7 +26,7 @@ if (!account.signed_in) {
 
 async function choose(file) {
   el("chosen").textContent = `Hashing ${file.name}…`;
-  prepared = await fingerprintFile(file);
+  prepared = await contentHashFile(file);
   el("chosen").innerHTML =
     `<span class="mono">${prepared.sha256.slice(0, 32)}…</span><br>` +
     `${escapeHtml(file.name)}, ${prepared.size_bytes.toLocaleString()} bytes, never uploaded`;

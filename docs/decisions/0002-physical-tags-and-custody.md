@@ -26,7 +26,7 @@ lifecycle, and the privacy position on scanning.
 
 The record schema splits in two.
 
-A **work** is the authorship claim. One per artwork. It carries the fingerprints of the
+A **work** is the authorship claim. One per artwork. It carries the content hash and similarity fingerprints of the
 reference photograph, the metadata, and the issuer's identity and assurance level at time
 of issue. This is what enters the transparency log and what ADR 0001 governs.
 

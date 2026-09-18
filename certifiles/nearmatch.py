@@ -1,4 +1,4 @@
-"""Near-match search over registered fingerprints.
+"""Near-match search over registered similarity fingerprints.
 
 Two directions, one machine. An artist searches with a suspected copy and gets
 candidates; the log searches on every new registration and alerts the earlier
@@ -14,7 +14,7 @@ could be rendered as "match found", and the strongest band is named
 STRONG_CANDIDATE rather than anything that sounds concluded.
 
 Quality overrides distance. A low-detail image — flat colour, line art — has a
-fingerprint that collides by coincidence far more often than a photograph's, so
+similarity fingerprint that collides by coincidence far more often than a photograph's, so
 a close distance on such an image means much less. A candidate whose quality is
 below the floor is capped at WEAK no matter how close the bits are.
 
@@ -36,11 +36,11 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Iterable, Mapping, Sequence
 
-from certifiles.fingerprint import (
+from certifiles.similarity import (
     LOW_QUALITY_CEILING,
-    Fingerprint,
-    FingerprintError,
-    FingerprintKind,
+    SimilarityFingerprint,
+    SimilarityError,
+    SimilarityKind,
     normalised_distance,
     validate_quality,
 )
@@ -51,7 +51,7 @@ from certifiles.fingerprint import (
 TIGHT = 0.12
 LOOSE = 0.25
 
-# Scanning every stored fingerprint is linear and correct. Multi-index hashing
+# Scanning every stored similarity fingerprint is linear and correct. Multi-index hashing
 # — splitting each hash into bands, matching bands exactly, unioning the
 # candidates — is the standard replacement and needs no vector database. Swap
 # when measurement says to, not before.
@@ -75,13 +75,13 @@ class Candidate:
     position: int
     band: Band
     quality: int
-    distances: Mapping[FingerprintKind, int]
+    distances: Mapping[SimilarityKind, int]
     quality_capped: bool = False
 
     @property
     def closest(self) -> float:
         """Smallest normalised distance across the kinds compared."""
-        from certifiles.fingerprint import BIT_LENGTHS
+        from certifiles.similarity import BIT_LENGTHS
 
         return min(
             normalised_distance(d, BIT_LENGTHS[k]) for k, d in self.distances.items()
@@ -89,7 +89,7 @@ class Candidate:
 
 
 SCHEMA = """
-CREATE TABLE IF NOT EXISTS fingerprints (
+CREATE TABLE IF NOT EXISTS similarity_fingerprints (
     position INTEGER NOT NULL,
     kind     TEXT NOT NULL,
     value    TEXT NOT NULL,
@@ -97,12 +97,12 @@ CREATE TABLE IF NOT EXISTS fingerprints (
     PRIMARY KEY (position, kind)
 );
 
-CREATE INDEX IF NOT EXISTS fingerprints_by_kind ON fingerprints (kind);
+CREATE INDEX IF NOT EXISTS similarity_fingerprints_by_kind ON similarity_fingerprints (kind);
 """
 
 
 class NearMatchIndex:
-    """Fingerprints by position, and the search over them.
+    """Similarity fingerprints by position, and the search over them.
 
     Rebuildable from the published log at any time, so it is deliberately not
     append-only: unlike the log, nothing here is evidence, and an index that
@@ -123,7 +123,7 @@ class NearMatchIndex:
         self.close()
 
     def add(
-        self, position: int, fingerprints: Iterable[Fingerprint], quality: int
+        self, position: int, fingerprints: Iterable[SimilarityFingerprint], quality: int
     ) -> None:
         if position < 0:
             raise NearMatchError("position must not be negative")
@@ -131,23 +131,23 @@ class NearMatchIndex:
         rows = [(position, str(f.kind), f.value, quality) for f in fingerprints]
         if not rows:
             raise NearMatchError(
-                f"position {position} has no fingerprints; a work that cannot be"
+                f"position {position} has no similarity fingerprints; a work that cannot be"
                 " searched should be recorded as such, not indexed silently"
             )
         self._connection.executemany(
-            "INSERT OR REPLACE INTO fingerprints (position, kind, value, quality)"
+            "INSERT OR REPLACE INTO similarity_fingerprints (position, kind, value, quality)"
             " VALUES (?, ?, ?, ?)",
             rows,
         )
 
     def size(self) -> int:
         return self._connection.execute(
-            "SELECT COUNT(DISTINCT position) FROM fingerprints"
+            "SELECT COUNT(DISTINCT position) FROM similarity_fingerprints"
         ).fetchone()[0]
 
     def search(
         self,
-        query: Sequence[Fingerprint],
+        query: Sequence[SimilarityFingerprint],
         query_quality: int,
         exclude: Iterable[int] = (),
         limit: int = 25,
@@ -165,26 +165,26 @@ class NearMatchIndex:
         suppression instead of noise.
         """
         if not query:
-            raise NearMatchError("a search needs at least one fingerprint")
+            raise NearMatchError("a search needs at least one similarity fingerprint")
         validate_quality(query_quality)
         if limit <= 0:
             raise NearMatchError("limit must be positive")
         kinds = [f.kind for f in query]
         if len(set(kinds)) != len(kinds):
             raise NearMatchError(
-                "a search has two fingerprints of one algorithm; silently using"
+                "a search has two similarity fingerprints of one algorithm; silently using"
                 " the last would miss matches on the first"
             )
 
         excluded = set(exclude)
         by_kind = {f.kind: f for f in query}
-        stored: dict[int, dict[FingerprintKind, Fingerprint]] = {}
+        stored: dict[int, dict[SimilarityKind, SimilarityFingerprint]] = {}
         qualities: dict[int, int] = {}
 
         # The f-string interpolates placeholders, never values. Every value goes
         # through `parameters` and is bound by sqlite3.
         sql = (
-            "SELECT position, kind, value, quality FROM fingerprints WHERE kind IN"  # noqa: S608
+            "SELECT position, kind, value, quality FROM similarity_fingerprints WHERE kind IN"  # noqa: S608
             f" ({','.join('?' * len(by_kind))})"
         )
         parameters: list = [str(k) for k in by_kind]
@@ -197,10 +197,10 @@ class NearMatchIndex:
             if position in excluded:
                 continue
             try:
-                stored.setdefault(position, {})[FingerprintKind(kind)] = Fingerprint(
-                    FingerprintKind(kind), value
+                stored.setdefault(position, {})[SimilarityKind(kind)] = SimilarityFingerprint(
+                    SimilarityKind(kind), value
                 )
-            except (FingerprintError, ValueError):
+            except (SimilarityError, ValueError):
                 # One drifted row from a partial rebuild must not take down
                 # every search. Nothing here is evidence and the index is
                 # rebuildable, so skipping and counting beats failing closed.
@@ -242,7 +242,7 @@ class NearMatchIndex:
 
 
 def classify(
-    distances: Mapping[FingerprintKind, int],
+    distances: Mapping[SimilarityKind, int],
     quality: int,
     tight: float = TIGHT,
     loose: float = LOOSE,
@@ -255,7 +255,7 @@ def classify(
     interface can explain a downgrade rather than presenting an unexplained
     rating.
     """
-    from certifiles.fingerprint import BIT_LENGTHS
+    from certifiles.similarity import BIT_LENGTHS
 
     if not distances:
         return None, False
@@ -307,7 +307,7 @@ class AlertPolicy:
 
 def monitor(
     index: NearMatchIndex,
-    new_fingerprints: Sequence[Fingerprint],
+    new_fingerprints: Sequence[SimilarityFingerprint],
     new_quality: int,
     new_position: int,
     limit: int = 25,

@@ -29,7 +29,7 @@ const actionable = alerts.filter((a) => a.band !== Band.WEAK);
 const distanceCells = (d) => Object.entries(d)
   .map(([k, v]) => `<div><span>${k}</span>${v} / ${BIT_LENGTHS[k]}</div>`).join("");
 
-// The wording has to match the band. Saying "the fingerprints agree" on a weak
+// The wording has to match the band. Saying "the similarity fingerprints agree" on a weak
 // candidate overstates the evidence, which is the failure this whole design is
 // built to avoid: a false positive is an accusation handed to the artist.
 const cautionFor = (a) => {
@@ -67,7 +67,7 @@ document.getElementById("out").innerHTML = `
         results, not findings.</p>
 
       <p class="notice">Searched in this browser over ${manifest.size} published record${manifest.size===1?"":"s"},
-        using fingerprints carried inside each record and covered by its inclusion proof, so
+        using similarity fingerprints carried inside each record and covered by its inclusion proof, so
         the similarity is computed from verified data rather than taken from a server. This
         reads the whole log, which suits a log this size and will not scale; a server-side
         index has to take over well before the download does.</p>
@@ -119,14 +119,14 @@ document.getElementById("out").innerHTML = `
         </div>`).join("")}
 
       <table>
-        <thead><tr><th>Work</th><th>Position</th><th>Assurance</th><th>Fingerprints</th><th></th></tr></thead>
+        <thead><tr><th>Work</th><th>Position</th><th>Assurance</th><th>Similarity</th><th></th></tr></thead>
         <tbody>
           ${mine.map((w) => `<tr>
             <td>${esc(w.record.content.media_type)}<div class="mono muted"
                 style="font-size:11.5px">${esc(w.record.content.sha256.slice(0,20))}…</div></td>
             <td class="mono">${w.position}</td>
             <td class="mono">${esc(w.record.issuer.assurance_level)}</td>
-            <td class="mono">${Object.keys(w.record.content.fingerprints ?? {}).join(", ") || "none"}</td>
+            <td class="mono">${Object.keys(w.record.content.similarity_fingerprints ?? {}).join(", ") || "none"}</td>
             <td><a href="./record.html?p=${w.position}">record</a></td>
           </tr>`).join("")}
         </tbody>

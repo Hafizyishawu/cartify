@@ -35,8 +35,8 @@ export async function post(path, body) {
   return payload;
 }
 
-/** Fingerprint a file in the browser. The file itself is never sent. */
-export async function fingerprintFile(file) {
+/** Compute a file's content hash in the browser. The file itself is never sent. */
+export async function contentHashFile(file) {
   const buffer = await file.arrayBuffer();
   const digest = await crypto.subtle.digest("SHA-256", buffer);
   const sha256 = Array.from(new Uint8Array(digest), (b) =>

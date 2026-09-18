@@ -43,7 +43,7 @@ CI runs all three on every push. See section 8.
 
 Six modules have no dedicated test file but are exercised indirectly: `domains` and
 `tokens` and `mail` through `test_recovery.py`, `sessions` and `ratelimit` through
-`test_accounts.py` and `test_service.py`, `fingerprint` through `test_nearmatch.py`.
+`test_accounts.py` and `test_service.py`, `similarity` through `test_nearmatch.py`.
 Indirect coverage tests the caller's use of a module, not the module's own contract, so
 each still carries gaps listed below.
 
@@ -229,13 +229,13 @@ Covered thoroughly by `test_doh.py` and `test_service.py`. One gap:
 | Slow request holds the single-threaded server (documents the dev-server limit) | load | todo |
 | Error responses never leak a stack trace or file path | security | todo |
 
-### fingerprint.py: `partial`
+### similarity.py: `partial`
 
 | Test | Type | Status |
 |---|---|---|
 | Hash validation, distance, quality bounds | unit | done |
-| **A fingerprinter that produces hashes from real images does not exist** | unit | todo |
-| Python and browser fingerprinters agree on the same file | parity | todo |
+| **Nothing computes a similarity fingerprint from a real image** | unit | todo |
+| Python and browser similarity fingerprints agree on the same file | parity | todo |
 
 ### signing.py: `partial`
 
@@ -277,7 +277,7 @@ on the site fails for someone using the library, and neither party can tell who 
 | Malformed checkpoint rejection agrees between implementations | parity | done |
 | **`verify.js` (314 lines) has no parity coverage** | parity | todo |
 | Canonical JSON serialisation agrees byte for byte | parity | todo |
-| Fingerprint computation agrees on identical input | parity | todo |
+| Similarity fingerprint computation agrees on identical input | parity | todo |
 | Vectors regenerate deterministically and are committed | regression | partial |
 
 ---
@@ -394,7 +394,7 @@ kept to the standard library. Worth deciding explicitly rather than drifting.
 | Precision and false-positive rate per quality stratum | measurement | todo |
 
 The harness is complete and has never run on a real image. Everything above depends on
-building a fingerprinter and assembling a corpus first. See `certifiles-eval-unmeasured`
+building a similarity fingerprinter and assembling a corpus first. See `certifiles-eval-unmeasured`
 in project memory and the build order in ADR 0002.
 
 Until a baseline exists, `TIGHT = 0.12` and `LOOSE = 0.25` are guesses shown to artists
@@ -408,7 +408,7 @@ Nothing in this section exists.
 
 | Test | Type | Status |
 |---|---|---|
-| Near-match search at 1k, 10k, 100k stored fingerprints | load | todo |
+| Near-match search at 1k, 10k, 100k stored similarity fingerprints | load | todo |
 | Log append throughput, and where it falls over | load | todo |
 | Publication wall-clock and output size at tree sizes to 1M | load | todo |
 | Proof generation cost as the tree grows | load | todo |

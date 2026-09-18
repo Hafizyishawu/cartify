@@ -1,4 +1,4 @@
-import { verifyFingerprint, hashFile, isContentHash } from "../verify.js";
+import { verifyContentHash, hashFile, isContentHash } from "../verify.js";
 import { Status } from "../verifier.js";
 import { mountNav } from "../site.js";
 mountNav("index.html");
@@ -27,7 +27,7 @@ const working = (text) => {
   el("working").classList.toggle("hidden", !text);
 };
 
-function render(result, fingerprint) {
+function render(result, contentHash) {
   const claim = result.claims?.[0];
   const status = result.status;
   const record = claim?.record;
@@ -56,7 +56,7 @@ function render(result, fingerprint) {
           ${record ? `<div class="row"><dt>Not proven</dt><dd>${notProven}</dd></div>` : ""}
         </dl>
         <dl class="facts">
-          <div class="fact"><dt>Fingerprint</dt><dd>${escape(fingerprint.slice(0, 16))}…</dd></div>
+          <div class="fact"><dt>Content hash</dt><dd>${escape(contentHash.slice(0, 16))}…</dd></div>
           ${result.manifest ? `<div class="fact"><dt>Log size</dt><dd>${result.manifest.size}</dd></div>` : ""}
           ${issuer ? `<div class="fact"><dt>Assurance</dt><dd>${escape(issuer.assurance_level)}</dd></div>` : ""}
           ${result.quorum ? `<div class="fact"><dt>Witnesses</dt><dd>${result.quorum.witnesses.length} of ${result.quorum.required}</dd></div>` : ""}
@@ -69,7 +69,7 @@ function render(result, fingerprint) {
           : ""}
       </div>
     </div>`;
-  el("cli").textContent = `certifiles verify --fingerprint ${fingerprint} --offline`;
+  el("cli").textContent = `certifiles verify --content-hash ${contentHash} --offline`;
 }
 
 function escape(text) {
@@ -78,13 +78,13 @@ function escape(text) {
   return node.innerHTML;
 }
 
-async function lookup(fingerprint) {
+async function lookup(contentHash) {
   working("checking the published log…");
   try {
-    render(await verifyFingerprint(BASE, fingerprint), fingerprint);
+    render(await verifyContentHash(BASE, contentHash), contentHash);
   } catch (error) {
     render({ status: Status.UNVERIFIED, detail: `Could not complete the check: ${error.message}` },
-           fingerprint);
+           contentHash);
   }
   working("");
 }
@@ -93,7 +93,7 @@ el("form").addEventListener("submit", (event) => {
   event.preventDefault();
   const value = el("hash").value.trim().toLowerCase().replace(/^sha256:/, "");
   if (!isContentHash(value)) {
-    render({ status: Status.INVALID, detail: "That is not a SHA-256 fingerprint: 64 hex characters are expected." }, value || "nothing");
+    render({ status: Status.INVALID, detail: "That is not a SHA-256 content hash: 64 hex characters are expected." }, value || "nothing");
     return;
   }
   lookup(value);
@@ -101,9 +101,9 @@ el("form").addEventListener("submit", (event) => {
 
 async function handleFile(file) {
   working(`hashing ${file.name} in your browser…`);
-  const fingerprint = await hashFile(file, (p) => working(`hashing ${file.name}… ${Math.round(p * 100)}%`));
-  el("hash").value = fingerprint;
-  await lookup(fingerprint);
+  const contentHash = await hashFile(file, (p) => working(`hashing ${file.name}… ${Math.round(p * 100)}%`));
+  el("hash").value = contentHash;
+  await lookup(contentHash);
 }
 
 el("drop").addEventListener("click", () => el("file").click());

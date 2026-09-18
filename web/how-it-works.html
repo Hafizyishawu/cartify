@@ -20,10 +20,10 @@
   <div class="prose">
     <h2>What happens when a work is registered</h2>
     <ol>
-      <li>Your browser computes the file's SHA-256 fingerprint and a few perceptual
-        fingerprints. <strong>The file itself is never uploaded.</strong> We hold no copy and
+      <li>Your browser computes the file's SHA-256 <strong>content hash</strong> and a few
+        <strong>similarity fingerprints</strong>. <strong>The file itself is never uploaded.</strong> We hold no copy and
         want none.</li>
-      <li>Those fingerprints, your identity, the strength of that identity, and what you are
+      <li>Those hashes, your identity, the strength of that identity, and what you are
         claiming go into a record.</li>
       <li>The record is appended to a public log at a permanent position. Positions are never
         reassigned, and nothing is ever edited or deleted.</li>
@@ -40,14 +40,14 @@
 
     <h2>Two things this cannot do</h2>
     <h3>It cannot tell you a file is not AI generated</h3>
-    <p>A generated image produces a fingerprint exactly like a photograph does. Registration
+    <p>A generated image produces a content hash exactly like a photograph does. Registration
       proves a file existed and was claimed, not how it was made. What Certifiles offers is the
       opposite direction: an artist can <strong>declare</strong> how a work was made, and that
       declaration is recorded permanently alongside it. Absence of a record proves nothing at
       all, because most work in the world is registered nowhere.</p>
 
     <h3>It cannot prove who created something</h3>
-    <p>A fingerprint proves a file is unchanged. It says nothing about authorship. What the log
+    <p>A content hash proves a file is unchanged. It says nothing about authorship. What the log
       records is who registered first, which is how copyright registration, patent filing and
       trademark have always worked. That puts the burden on authors to register before
       publishing, and we would rather say so plainly than imply a guarantee we cannot keep.</p>
@@ -66,7 +66,7 @@
       <a href="./status.html">status page</a> shows the current count.</p>
 
     <h2>Near match monitoring</h2>
-    <p>Perceptual fingerprints let us surface later registrations that resemble your work. This
+    <p>Similarity fingerprints let us surface later registrations that resemble your work. This
       catches ordinary copying. It is not proof: two unrelated images can score close by
       coincidence, and someone who knows how the measure works can evade it. Alerts show the
       raw distances and never a verdict, because a false alert is an accusation handed to you

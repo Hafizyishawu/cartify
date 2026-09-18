@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from certifiles.anchoring import AnchorKind, AnchorReceipt
 from certifiles.checkpoint import SignedCheckpoint, WitnessPolicy, add_signature, sign
-from certifiles.fingerprint import Fingerprint, FingerprintKind
+from certifiles.similarity import SimilarityFingerprint, SimilarityKind
 from certifiles.log import TransparencyLog
 from certifiles.publication import StaticPublication
 from certifiles.record import AssuranceLevel, ClaimType, Content, Issuer, Record
@@ -91,9 +91,9 @@ def build(out: Path, witnesses: int, keep: bool) -> None:
                     sha256=digest,
                     media_type=media,
                     size_bytes=len(payload),
-                    fingerprints=(
-                        Fingerprint(FingerprintKind.PHASH, phash),
-                        Fingerprint(FingerprintKind.DHASH, dhash),
+                    similarity_fingerprints=(
+                        SimilarityFingerprint(SimilarityKind.PHASH, phash),
+                        SimilarityFingerprint(SimilarityKind.DHASH, dhash),
                     ),
                     quality=quality,
                 ),

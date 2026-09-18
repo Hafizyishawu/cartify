@@ -8,7 +8,7 @@ Cartify is a digital authorship and certification system for artists. It fingerp
 
 Cartify is the working prototype for **Certifiles**, an authorship and provenance service
 for any digital file rather than artwork alone. The pipeline below stays as it is; what
-changes is where its output goes. Cartify's fingerprinting becomes the client that
+changes is where its output goes. Cartify's hashing becomes the client that
 produces records, and those records are entered into a public append-only transparency
 log that anyone can verify without trusting the operator.
 

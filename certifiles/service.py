@@ -45,7 +45,7 @@ from certifiles.mail import (
 )
 from certifiles.record import AssuranceLevel
 from certifiles.tokens import TokenPurpose, TokenStore
-from certifiles.fingerprint import Fingerprint, FingerprintError, FingerprintKind
+from certifiles.similarity import SimilarityFingerprint, SimilarityError, SimilarityKind
 from certifiles.log import TransparencyLog
 from certifiles.ratelimit import (
     ACCOUNT_CREATION,
@@ -234,7 +234,7 @@ class Handler(BaseHTTPRequestHandler):
         except ApiError as error:
             self._send_json(error.status, {"error": error.message},
                             retry_after=error.retry_after)
-        except (AccountError, RecordError, FingerprintError) as error:
+        except (AccountError, RecordError, SimilarityError) as error:
             self._send_json(400, {"error": str(error)})
 
     # ---- endpoints -----------------------------------------------------
@@ -353,15 +353,15 @@ class Handler(BaseHTTPRequestHandler):
 
         body = self._json_body()
         fingerprints = tuple(
-            Fingerprint(FingerprintKind(kind), value)
-            for kind, value in sorted((body.get("fingerprints") or {}).items())
+            SimilarityFingerprint(SimilarityKind(kind), value)
+            for kind, value in sorted((body.get("similarity_fingerprints") or {}).items())
         )
         record = Record(
             content=Content(
                 sha256=str(body.get("sha256", "")),
                 media_type=str(body.get("media_type", "")),
                 size_bytes=int(body.get("size_bytes", -1)),
-                fingerprints=fingerprints,
+                similarity_fingerprints=fingerprints,
                 quality=body.get("quality"),
             ),
             issuer=Issuer(

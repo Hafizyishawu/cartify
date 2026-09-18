@@ -7,11 +7,11 @@ something is *not* promoted rather than that it is found.
 
 import unittest
 
-from certifiles.fingerprint import (
+from certifiles.similarity import (
     LOW_QUALITY_CEILING,
-    Fingerprint,
-    FingerprintError,
-    FingerprintKind,
+    SimilarityFingerprint,
+    SimilarityError,
+    SimilarityKind,
     normalised_distance,
     validate_quality,
 )
@@ -24,13 +24,13 @@ from certifiles.nearmatch import (
     monitor,
 )
 
-PHASH = FingerprintKind.PHASH
-DHASH = FingerprintKind.DHASH
-PDQ = FingerprintKind.PDQ
+PHASH = SimilarityKind.PHASH
+DHASH = SimilarityKind.DHASH
+PDQ = SimilarityKind.PDQ
 
 
-def phash(value: str) -> Fingerprint:
-    return Fingerprint(PHASH, value)
+def phash(value: str) -> SimilarityFingerprint:
+    return SimilarityFingerprint(PHASH, value)
 
 
 def flip(value: str, bits: int) -> str:
@@ -45,21 +45,21 @@ BASE_256 = "4f1c" * 16
 
 class TestFingerprint(unittest.TestCase):
     def test_valid_fingerprints(self):
-        Fingerprint(PHASH, BASE_64)
-        Fingerprint(DHASH, BASE_64)
-        Fingerprint(PDQ, BASE_256)
+        SimilarityFingerprint(PHASH, BASE_64)
+        SimilarityFingerprint(DHASH, BASE_64)
+        SimilarityFingerprint(PDQ, BASE_256)
 
     def test_wrong_width_is_rejected(self):
         for kind, value in ((PHASH, BASE_256), (PDQ, BASE_64), (PHASH, "abc")):
             with self.subTest(kind=kind, width=len(value)):
-                with self.assertRaises(FingerprintError):
-                    Fingerprint(kind, value)
+                with self.assertRaises(SimilarityError):
+                    SimilarityFingerprint(kind, value)
 
     def test_non_hex_is_rejected(self):
         for bad in ("C3A90F7E21B45D80", "zzzzzzzzzzzzzzzz", "", "0x c3a90f7e21b45d"):
             with self.subTest(value=bad):
-                with self.assertRaises(FingerprintError):
-                    Fingerprint(PHASH, bad)
+                with self.assertRaises(SimilarityError):
+                    SimilarityFingerprint(PHASH, bad)
 
     def test_distance_counts_differing_bits(self):
         self.assertEqual(phash(BASE_64).distance_to(phash(BASE_64)), 0)
@@ -72,8 +72,8 @@ class TestFingerprint(unittest.TestCase):
     def test_comparing_different_algorithms_is_refused(self):
         # A phash and a dhash of the same image are unrelated numbers; a
         # distance between them would be meaningless and look meaningful.
-        with self.assertRaises(FingerprintError):
-            Fingerprint(PHASH, BASE_64).distance_to(Fingerprint(DHASH, BASE_64))
+        with self.assertRaises(SimilarityError):
+            SimilarityFingerprint(PHASH, BASE_64).distance_to(SimilarityFingerprint(DHASH, BASE_64))
 
     def test_normalisation_makes_widths_comparable(self):
         self.assertEqual(normalised_distance(8, 64), normalised_distance(32, 256))
@@ -83,7 +83,7 @@ class TestFingerprint(unittest.TestCase):
         validate_quality(100)
         for bad in (-1, 101, 1.5, True, "80"):
             with self.subTest(quality=bad):
-                with self.assertRaises(FingerprintError):
+                with self.assertRaises(SimilarityError):
                     validate_quality(bad)
 
 
@@ -148,8 +148,8 @@ class IndexTestCase(unittest.TestCase):
         self.index.add(
             position,
             [
-                Fingerprint(PHASH, flip(base, bits)),
-                Fingerprint(DHASH, flip(base, bits)),
+                SimilarityFingerprint(PHASH, flip(base, bits)),
+                SimilarityFingerprint(DHASH, flip(base, bits)),
             ],
             quality,
         )
@@ -171,13 +171,13 @@ class TestIndex(IndexTestCase):
             self.index.add(-1, [phash(BASE_64)], 90)
 
     def test_invalid_quality_is_refused(self):
-        with self.assertRaises(FingerprintError):
+        with self.assertRaises(SimilarityError):
             self.index.add(0, [phash(BASE_64)], 900)
 
     def test_an_exact_duplicate_is_the_strongest_candidate(self):
         self.add(0)
         found = self.index.search(
-            [Fingerprint(PHASH, BASE_64), Fingerprint(DHASH, BASE_64)], 90
+            [SimilarityFingerprint(PHASH, BASE_64), SimilarityFingerprint(DHASH, BASE_64)], 90
         )
         self.assertEqual(found[0].position, 0)
         self.assertEqual(found[0].band, Band.STRONG_CANDIDATE)
@@ -185,7 +185,7 @@ class TestIndex(IndexTestCase):
 
     def test_unrelated_work_is_not_returned(self):
         self.add(0, base="0000000000000000")
-        found = self.index.search([Fingerprint(PHASH, "ffffffffffffffff")], 90)
+        found = self.index.search([SimilarityFingerprint(PHASH, "ffffffffffffffff")], 90)
         self.assertEqual(found, [])
 
     def test_results_are_ranked_by_band_then_closeness(self):
@@ -193,7 +193,7 @@ class TestIndex(IndexTestCase):
         self.add(1, bits=2)    # near
         self.add(2, bits=13)   # middling
         found = self.index.search(
-            [Fingerprint(PHASH, BASE_64), Fingerprint(DHASH, BASE_64)], 90
+            [SimilarityFingerprint(PHASH, BASE_64), SimilarityFingerprint(DHASH, BASE_64)], 90
         )
         self.assertEqual([c.position for c in found][:2], [1, 2])
 
@@ -203,16 +203,16 @@ class TestIndex(IndexTestCase):
         # a weak candidate registered first must not outrank a strong one.
         self.index.add(
             1,
-            [Fingerprint(PHASH, flip(BASE_64, 14)), Fingerprint(DHASH, flip(BASE_64, 40))],
+            [SimilarityFingerprint(PHASH, flip(BASE_64, 14)), SimilarityFingerprint(DHASH, flip(BASE_64, 40))],
             90,
         )
         self.index.add(
             9,
-            [Fingerprint(PHASH, flip(BASE_64, 2)), Fingerprint(DHASH, flip(BASE_64, 2))],
+            [SimilarityFingerprint(PHASH, flip(BASE_64, 2)), SimilarityFingerprint(DHASH, flip(BASE_64, 2))],
             90,
         )
         found = self.index.search(
-            [Fingerprint(PHASH, BASE_64), Fingerprint(DHASH, BASE_64)], 90
+            [SimilarityFingerprint(PHASH, BASE_64), SimilarityFingerprint(DHASH, BASE_64)], 90
         )
         self.assertEqual([c.band for c in found], [Band.STRONG_CANDIDATE, Band.WEAK])
         self.assertEqual([c.position for c in found], [9, 1])
@@ -221,14 +221,14 @@ class TestIndex(IndexTestCase):
         self.add(0)
         self.add(1)
         found = self.index.search(
-            [Fingerprint(PHASH, BASE_64), Fingerprint(DHASH, BASE_64)], 90, exclude={0}
+            [SimilarityFingerprint(PHASH, BASE_64), SimilarityFingerprint(DHASH, BASE_64)], 90, exclude={0}
         )
         self.assertEqual([c.position for c in found], [1])
 
     def test_limit_is_honoured(self):
         for i in range(10):
             self.add(i, bits=i % 3)
-        found = self.index.search([Fingerprint(PHASH, BASE_64)], 90, limit=3)
+        found = self.index.search([SimilarityFingerprint(PHASH, BASE_64)], 90, limit=3)
         self.assertEqual(len(found), 3)
 
     def test_invalid_search_arguments_are_refused(self):
@@ -241,9 +241,9 @@ class TestIndex(IndexTestCase):
         # An old record with fewer fingerprints must still be searchable on
         # whatever it does have, which is the whole reason for capturing
         # several: a later algorithm cannot be applied to it retroactively.
-        self.index.add(0, [Fingerprint(PHASH, BASE_64)], 90)
+        self.index.add(0, [SimilarityFingerprint(PHASH, BASE_64)], 90)
         found = self.index.search(
-            [Fingerprint(PHASH, BASE_64), Fingerprint(PDQ, BASE_256)], 90
+            [SimilarityFingerprint(PHASH, BASE_64), SimilarityFingerprint(PDQ, BASE_256)], 90
         )
         self.assertEqual(found[0].position, 0)
         self.assertEqual(set(found[0].distances), {PHASH})
@@ -253,7 +253,7 @@ class TestIndex(IndexTestCase):
         # the flat one.
         self.add(0, quality=10)
         found = self.index.search(
-            [Fingerprint(PHASH, BASE_64), Fingerprint(DHASH, BASE_64)], 95
+            [SimilarityFingerprint(PHASH, BASE_64), SimilarityFingerprint(DHASH, BASE_64)], 95
         )
         self.assertEqual(found[0].band, Band.WEAK)
         self.assertTrue(found[0].quality_capped)
@@ -276,13 +276,13 @@ class TestIndex(IndexTestCase):
         # same index content gave opposite verdicts.
         low_first = NearMatchIndex()
         self.addCleanup(low_first.close)
-        low_first.add(1, [Fingerprint(DHASH, BASE_64)], 5)
-        low_first.add(1, [Fingerprint(PHASH, BASE_64)], 90)
+        low_first.add(1, [SimilarityFingerprint(DHASH, BASE_64)], 5)
+        low_first.add(1, [SimilarityFingerprint(PHASH, BASE_64)], 90)
         high_first = NearMatchIndex()
         self.addCleanup(high_first.close)
-        high_first.add(2, [Fingerprint(PHASH, BASE_64)], 90)
-        high_first.add(2, [Fingerprint(DHASH, BASE_64)], 5)
-        query = [Fingerprint(PHASH, BASE_64), Fingerprint(DHASH, BASE_64)]
+        high_first.add(2, [SimilarityFingerprint(PHASH, BASE_64)], 90)
+        high_first.add(2, [SimilarityFingerprint(DHASH, BASE_64)], 5)
+        query = [SimilarityFingerprint(PHASH, BASE_64), SimilarityFingerprint(DHASH, BASE_64)]
         self.assertEqual(
             low_first.search(query, 90)[0].band, high_first.search(query, 90)[0].band
         )
@@ -292,7 +292,7 @@ class TestIndex(IndexTestCase):
         # Silently keeping the last would miss a match on the first.
         with self.assertRaises(NearMatchError):
             self.index.search(
-                [Fingerprint(PHASH, BASE_64), Fingerprint(PHASH, flip(BASE_64, 3))], 90
+                [SimilarityFingerprint(PHASH, BASE_64), SimilarityFingerprint(PHASH, flip(BASE_64, 3))], 90
             )
 
     def test_one_drifted_row_does_not_take_down_every_search(self):
@@ -300,9 +300,9 @@ class TestIndex(IndexTestCase):
         # failing closed on a partial rebuild.
         self.add(0)
         self.index._connection.execute(
-            "INSERT OR REPLACE INTO fingerprints VALUES (7, 'phash', 'deadbeef', 90)"
+            "INSERT OR REPLACE INTO similarity_fingerprints VALUES (7, 'phash', 'deadbeef', 90)"
         )
-        found = self.index.search([Fingerprint(PHASH, BASE_64)], 90)
+        found = self.index.search([SimilarityFingerprint(PHASH, BASE_64)], 90)
         self.assertTrue(any(c.position == 0 for c in found))
         self.assertEqual(self.index.unreadable_rows, 1)
 
@@ -314,7 +314,7 @@ class TestMonitoring(IndexTestCase):
         self.add(20)
         found = monitor(
             self.index,
-            [Fingerprint(PHASH, BASE_64), Fingerprint(DHASH, BASE_64)],
+            [SimilarityFingerprint(PHASH, BASE_64), SimilarityFingerprint(DHASH, BASE_64)],
             90,
             new_position=10,
         )
@@ -327,18 +327,18 @@ class TestMonitoring(IndexTestCase):
         # the victim the alert exists for.
         self.index.add(
             0,
-            [Fingerprint(PHASH, flip(BASE_64, 5)), Fingerprint(DHASH, flip(BASE_64, 5))],
+            [SimilarityFingerprint(PHASH, flip(BASE_64, 5)), SimilarityFingerprint(DHASH, flip(BASE_64, 5))],
             90,
         )
         for position in range(11, 411):
             self.index.add(
                 position,
-                [Fingerprint(PHASH, flip(BASE_64, 2)), Fingerprint(DHASH, flip(BASE_64, 2))],
+                [SimilarityFingerprint(PHASH, flip(BASE_64, 2)), SimilarityFingerprint(DHASH, flip(BASE_64, 2))],
                 90,
             )
         alerts = monitor(
             self.index,
-            [Fingerprint(PHASH, BASE_64), Fingerprint(DHASH, BASE_64)],
+            [SimilarityFingerprint(PHASH, BASE_64), SimilarityFingerprint(DHASH, BASE_64)],
             90,
             new_position=10,
         )
@@ -349,7 +349,7 @@ class TestMonitoring(IndexTestCase):
         self.add(7)
         found = monitor(
             self.index,
-            [Fingerprint(PHASH, BASE_64), Fingerprint(DHASH, BASE_64)],
+            [SimilarityFingerprint(PHASH, BASE_64), SimilarityFingerprint(DHASH, BASE_64)],
             90,
             new_position=7,
         )

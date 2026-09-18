@@ -23,7 +23,7 @@ import re
 from dataclasses import dataclass
 from enum import StrEnum
 
-from certifiles.fingerprint import Fingerprint, FingerprintError, validate_quality
+from certifiles.similarity import SimilarityFingerprint, SimilarityError, validate_quality
 
 SCHEMA_VERSION = 1
 
@@ -62,17 +62,17 @@ class AssuranceLevel(StrEnum):
 class Content:
     """What was registered.
 
-    Several perceptual fingerprints rather than one, and they live in the
+    Several similarity fingerprints rather than one, and they live in the
     record — covered by the inclusion proof — rather than in a service-side
-    index. The file is never stored, so a fingerprint cannot be recomputed
-    later; and a fingerprint the operator could revise afterwards would let an
+    index. The file is never stored, so a similarity fingerprint cannot be recomputed
+    later; and a similarity fingerprint the operator could revise afterwards would let an
     artist's own search terms be altered under them.
     """
 
     sha256: str
     media_type: str
     size_bytes: int
-    fingerprints: tuple[Fingerprint, ...] = ()
+    similarity_fingerprints: tuple[SimilarityFingerprint, ...] = ()
     quality: int | None = None
 
 
@@ -98,11 +98,11 @@ class Record:
             "sha256": self.content.sha256,
             "size_bytes": self.content.size_bytes,
         }
-        if self.content.fingerprints:
+        if self.content.similarity_fingerprints:
             # Keyed by algorithm, so canonical ordering falls out of sorted
             # keys and two clients cannot disagree on the order they listed.
-            content["fingerprints"] = {
-                str(f.kind): f.value for f in self.content.fingerprints
+            content["similarity_fingerprints"] = {
+                str(f.kind): f.value for f in self.content.similarity_fingerprints
             }
         if self.content.quality is not None:
             content["quality"] = self.content.quality
@@ -169,16 +169,16 @@ def validate(record: Record) -> None:
         ("issuer.key_id", record.issuer.key_id),
     ):
         _require_text(value, field_name)
-    kinds = [f.kind for f in record.content.fingerprints]
+    kinds = [f.kind for f in record.content.similarity_fingerprints]
     if len(set(kinds)) != len(kinds):
-        raise RecordError("content.fingerprints has two values for one algorithm")
-    for fingerprint in record.content.fingerprints:
-        if not isinstance(fingerprint, Fingerprint):
-            raise RecordError("content.fingerprints must contain Fingerprint values")
+        raise RecordError("content.similarity_fingerprints has two values for one algorithm")
+    for fingerprint in record.content.similarity_fingerprints:
+        if not isinstance(fingerprint, SimilarityFingerprint):
+            raise RecordError("content.similarity_fingerprints must contain SimilarityFingerprint values")
     if record.content.quality is not None:
         try:
             validate_quality(record.content.quality)
-        except FingerprintError as exc:
+        except SimilarityError as exc:
             raise RecordError(f"content.quality: {exc}") from exc
     if record.declared_created_at is not None:
         _require_text(record.declared_created_at, "declared_created_at")
