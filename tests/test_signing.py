@@ -6,6 +6,7 @@ produces is actually verifiable, so they must run before any checkpoint is
 shown to a witness.
 """
 
+import sys
 import unittest
 
 from certifiles.checkpoint import (
@@ -137,3 +138,79 @@ class TestEd25519(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+
+class _BlockCryptography:
+    """Makes `cryptography` unimportable inside the block.
+
+    Clearing it from `sys.modules` is the load-bearing part. A meta_path finder
+    alone does nothing once a module is already imported, which is always the
+    case by the time this suite runs.
+    """
+
+    PREFIXES = ("cryptography", "certifiles")
+
+    def find_spec(self, name, path=None, target=None):
+        if name == "cryptography" or name.startswith("cryptography."):
+            raise ImportError("cryptography is blocked for this test")
+        return None
+
+    def __enter__(self):
+        self._saved = {
+            name: module
+            for name, module in sys.modules.items()
+            if name.split(".")[0] in self.PREFIXES
+        }
+        for name in self._saved:
+            del sys.modules[name]
+        sys.meta_path.insert(0, self)
+        return self
+
+    def __exit__(self, *_exc):
+        sys.meta_path.remove(self)
+        for name in [n for n in sys.modules if n.split(".")[0] in self.PREFIXES]:
+            del sys.modules[name]
+        sys.modules.update(self._saved)
+        return False
+
+
+class TestLazyDependency(unittest.TestCase):
+    """`cryptography` must stay optional for everything except signing.
+
+    The package parses and builds checkpoints with only the standard library,
+    which is what lets a verifier run somewhere that installs nothing. CI
+    installs cryptography, so this test is the only thing standing between that
+    contract and a top-level import added to an unrelated module.
+    """
+
+    def test_every_module_imports_without_cryptography(self):
+        import importlib
+        import pkgutil
+
+        import certifiles
+
+        names = [
+            f"certifiles.{module.name}"
+            for module in pkgutil.iter_modules(certifiles.__path__)
+        ]
+        self.assertGreater(len(names), 10, "module discovery found almost nothing")
+
+        with _BlockCryptography():
+            for name in names:
+                with self.subTest(module=name):
+                    importlib.import_module(name)
+
+    def test_the_blocker_actually_blocks(self):
+        # Without this, the test above passes for the wrong reason and would
+        # keep passing after the contract it guards had been broken.
+        with _BlockCryptography():
+            import certifiles.checkpoint as checkpoint
+            import certifiles.signing as signing
+
+            # Resolved through the freshly imported modules: the block clears
+            # certifiles from sys.modules, so the class raised inside is not the
+            # same object as the one this file imported at the top.
+            with self.assertRaises(checkpoint.CheckpointError) as caught:
+                signing.InMemoryEd25519Signer.from_seed("origin", b"\x01" * 32)
+            self.assertIn("cryptography", str(caught.exception))
