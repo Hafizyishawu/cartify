@@ -106,6 +106,7 @@ class TestFieldSensitivity(unittest.TestCase):
                     media_type="image/png",
                     size_bytes=1024,
                     similarity_fingerprints=(SimilarityFingerprint(SimilarityKind.PHASH, "c3a90f7e21b45d80"),),
+                    derivation_version=1,
                 )
             ),
             "quality": sample(
@@ -131,9 +132,34 @@ class TestFieldSensitivity(unittest.TestCase):
         # identical bytes and identical proofs.
         a = SimilarityFingerprint(SimilarityKind.PHASH, "c3a90f7e21b45d80")
         b = SimilarityFingerprint(SimilarityKind.DHASH, "9e2b17c0da45f381")
-        first = sample(content=Content(VALID_SHA, "image/png", 10, (a, b), 80))
-        second = sample(content=Content(VALID_SHA, "image/png", 10, (b, a), 80))
+        first = sample(content=Content(VALID_SHA, "image/png", 10, (a, b), 80, 1))
+        second = sample(content=Content(VALID_SHA, "image/png", 10, (b, a), 80, 1))
         self.assertEqual(first.leaf_data(), second.leaf_data())
+
+    def test_fingerprints_without_a_derivation_version_are_rejected(self):
+        # Two values from different pipelines are not comparable, and the file
+        # is never stored, so a record that does not say which one produced its
+        # fingerprints can never be placed against any other.
+        a = SimilarityFingerprint(SimilarityKind.PHASH, "c3a90f7e21b45d80")
+        with self.assertRaises(RecordError):
+            sample(content=Content(VALID_SHA, "image/png", 10, (a,), 80)).leaf_data()
+
+    def test_a_record_with_no_fingerprints_needs_no_version(self):
+        sample(content=Content(VALID_SHA, "image/png", 10)).leaf_data()
+
+    def test_the_derivation_version_must_be_a_positive_integer(self):
+        a = SimilarityFingerprint(SimilarityKind.PHASH, "c3a90f7e21b45d80")
+        for bad in (0, -1, 1.0, True, "1"):
+            with self.subTest(version=bad):
+                with self.assertRaises(RecordError):
+                    sample(content=Content(
+                        VALID_SHA, "image/png", 10, (a,), 80, bad)).leaf_data()
+
+    def test_the_derivation_version_changes_the_leaf(self):
+        a = SimilarityFingerprint(SimilarityKind.PHASH, "c3a90f7e21b45d80")
+        one = sample(content=Content(VALID_SHA, "image/png", 10, (a,), 80, 1))
+        two = sample(content=Content(VALID_SHA, "image/png", 10, (a,), 80, 2))
+        self.assertNotEqual(one.leaf_data(), two.leaf_data())
 
     def test_duplicate_fingerprint_kinds_are_rejected(self):
         a = SimilarityFingerprint(SimilarityKind.PHASH, "c3a90f7e21b45d80")

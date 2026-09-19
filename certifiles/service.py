@@ -363,6 +363,7 @@ class Handler(BaseHTTPRequestHandler):
                 size_bytes=int(body.get("size_bytes", -1)),
                 similarity_fingerprints=fingerprints,
                 quality=body.get("quality"),
+                derivation_version=body.get("derivation_version"),
             ),
             issuer=Issuer(
                 identity_id=account.identity_id,

@@ -1,3 +1,5 @@
+import { similarityFingerprints } from "./similarity.js";
+
 // Talking to the service. One place that knows about the CSRF header and what
 // an error response looks like, so no page reimplements either.
 
@@ -35,11 +37,38 @@ export async function post(path, body) {
   return payload;
 }
 
-/** Compute a file's content hash in the browser. The file itself is never sent. */
+/**
+ * Everything the server is told about a file. The file itself is never sent.
+ *
+ * The content hash is what verification and duplicate-claim priority rest on,
+ * and anyone holding the file can recompute it. The similarity fingerprints are
+ * what monitoring searches over, and nobody can recompute them without the
+ * file, so the server takes them on trust. Those are different kinds of claim
+ * and the record keeps them apart.
+ */
 export async function contentHashFile(file) {
   const buffer = await file.arrayBuffer();
   const digest = await crypto.subtle.digest("SHA-256", buffer);
   const sha256 = Array.from(new Uint8Array(digest), (b) =>
     b.toString(16).padStart(2, "0")).join("");
-  return { sha256, size_bytes: file.size, media_type: file.type || "application/octet-stream" };
+  const prepared = {
+    sha256,
+    size_bytes: file.size,
+    media_type: file.type || "application/octet-stream",
+  };
+
+  // Only images have similarity fingerprints, and most files registered here
+  // will not be images. A failure to derive them is not a failure to register:
+  // the authorship claim rests on the content hash alone.
+  try {
+    const similarity = await similarityFingerprints(file);
+    if (similarity) {
+      prepared.similarity_fingerprints = similarity.fingerprints;
+      prepared.derivation_version = similarity.derivation_version;
+    }
+  } catch {
+    // Left absent rather than guessed. An absent fingerprint means monitoring
+    // cannot search this work, which is visible on the record and honest.
+  }
+  return prepared;
 }

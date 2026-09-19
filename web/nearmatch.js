@@ -67,7 +67,10 @@ export function classify(distances, quality, tight = TIGHT, loose = LOOSE) {
   else if (withinLoose >= 1) band = Band.WEAK;
   else return { band: null, qualityCapped: false };
 
-  if (quality < LOW_QUALITY_CEILING && band !== Band.WEAK) {
+  // A null quality is "not established", which is neither low nor high. It
+  // cannot trip the cap, and it must not lift it either, so the caller is told
+  // rather than being handed a number that was never measured.
+  if (quality != null && quality < LOW_QUALITY_CEILING && band !== Band.WEAK) {
     return { band: Band.WEAK, qualityCapped: true };
   }
   return { band, qualityCapped: false };
@@ -101,14 +104,15 @@ export function search(subject, entries, { afterPosition = null, limit = 25 } = 
     if (Object.keys(distances).length === 0) continue;
 
     // The lower of the two qualities governs: comparing a detailed work
-    // against a flat one is only as reliable as the flat one.
-    const quality = Math.min(
-      subject.content.quality ?? 100,
-      entry.record.content?.quality ?? 100,
-    );
+    // against a flat one is only as reliable as the flat one. Defaulting an
+    // absent quality to 100 would have been the reverse of safe: it lifts the
+    // low-detail cap on exactly the records nothing is known about.
+    const pair = [subject.content.quality, entry.record.content?.quality];
+    const qualityUnknown = pair.some((value) => value == null);
+    const quality = qualityUnknown ? null : Math.min(...pair);
     const { band, qualityCapped } = classify(distances, quality);
     if (!band) continue;
-    candidates.push({ entry, band, quality, distances, qualityCapped });
+    candidates.push({ entry, band, quality, distances, qualityCapped, qualityUnknown });
   }
 
   candidates.sort(

@@ -96,6 +96,10 @@ def build(out: Path, witnesses: int, keep: bool) -> None:
                         SimilarityFingerprint(SimilarityKind.DHASH, dhash),
                     ),
                     quality=quality,
+                    # Hand-written fixture hashes, not derived from any image,
+                    # but the schema requires a pipeline to be named and the
+                    # demo exists to exercise the real format.
+                    derivation_version=1,
                 ),
                 issuer=Issuer(identity, assurance, "log-key-2026-09"),
                 claim_type=ClaimType.CREATED,

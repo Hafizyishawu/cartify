@@ -74,6 +74,11 @@ class Content:
     size_bytes: int
     similarity_fingerprints: tuple[SimilarityFingerprint, ...] = ()
     quality: int | None = None
+    # Which client-side derivation produced the similarity fingerprints. Two
+    # values from different pipelines are not comparable, and the file is never
+    # stored, so a record that does not say which one it used can never be
+    # placed. Required whenever similarity fingerprints are present.
+    derivation_version: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,6 +111,8 @@ class Record:
             }
         if self.content.quality is not None:
             content["quality"] = self.content.quality
+        if self.content.derivation_version is not None:
+            content["derivation_version"] = self.content.derivation_version
 
         record = {
             "claim_type": str(self.claim_type),
@@ -180,6 +187,15 @@ def validate(record: Record) -> None:
             validate_quality(record.content.quality)
         except SimilarityError as exc:
             raise RecordError(f"content.quality: {exc}") from exc
+    version = record.content.derivation_version
+    if record.content.similarity_fingerprints and version is None:
+        raise RecordError(
+            "content.derivation_version is required when similarity fingerprints"
+            " are present: values from different pipelines are not comparable"
+        )
+    if version is not None:
+        if not isinstance(version, int) or isinstance(version, bool) or version < 1:
+            raise RecordError("content.derivation_version must be a positive integer")
     if record.declared_created_at is not None:
         _require_text(record.declared_created_at, "declared_created_at")
     if not isinstance(record.content.size_bytes, int) or isinstance(

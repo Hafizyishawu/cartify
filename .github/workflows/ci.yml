@@ -67,3 +67,8 @@ jobs:
         # the site fails for someone using the library and neither party can
         # tell who is wrong.
         run: node web/test/cross-check.mjs
+      - name: Similarity fingerprinter
+        # Resize invariance is the load-bearing property: a fingerprint that
+        # does not survive a rescale detects nothing, because a copy is almost
+        # never the same dimensions as the original.
+        run: node web/test/similarity.test.mjs
