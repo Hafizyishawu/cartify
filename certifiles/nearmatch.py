@@ -74,7 +74,7 @@ class Band(StrEnum):
 class Candidate:
     position: int
     band: Band
-    quality: int
+    quality: int | None
     distances: Mapping[SimilarityKind, int]
     quality_capped: bool = False
 
@@ -88,12 +88,27 @@ class Candidate:
         )
 
 
+def _weaker_quality(left: int | None, right: int | None) -> int | None:
+    """The less trustworthy of two detail levels, where unknown beats both.
+
+    Unknown is not zero and it is not a hundred. Substituting either would turn
+    the absence of a measurement into a verdict: zero caps every comparison to
+    weak and makes monitoring useless, a hundred lifts the low-detail cap on
+    exactly the records nothing is known about.
+    """
+    if left is None or right is None:
+        return None
+    return min(left, right)
+
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS similarity_fingerprints (
     position INTEGER NOT NULL,
     kind     TEXT NOT NULL,
     value    TEXT NOT NULL,
-    quality  INTEGER NOT NULL,
+    -- Nullable: derivation version 1 computes no quality, and an unknown
+    -- detail level is not the same as a low or a high one.
+    quality  INTEGER,
     PRIMARY KEY (position, kind)
 );
 
@@ -110,7 +125,11 @@ class NearMatchIndex:
     """
 
     def __init__(self, path: str | Path = ":memory:") -> None:
-        self._connection = sqlite3.connect(str(path), isolation_level=None)
+        # The service is threaded, and every other store in this package already
+        # allows cross-thread use. sqlite3 is in serialized mode.
+        self._connection = sqlite3.connect(
+            str(path), isolation_level=None, check_same_thread=False
+        )
         self._connection.executescript(SCHEMA)
 
     def close(self) -> None:
@@ -123,11 +142,15 @@ class NearMatchIndex:
         self.close()
 
     def add(
-        self, position: int, fingerprints: Iterable[SimilarityFingerprint], quality: int
+        self,
+        position: int,
+        fingerprints: Iterable[SimilarityFingerprint],
+        quality: int | None = None,
     ) -> None:
         if position < 0:
             raise NearMatchError("position must not be negative")
-        validate_quality(quality)
+        if quality is not None:
+            validate_quality(quality)
         rows = [(position, str(f.kind), f.value, quality) for f in fingerprints]
         if not rows:
             raise NearMatchError(
@@ -148,7 +171,7 @@ class NearMatchIndex:
     def search(
         self,
         query: Sequence[SimilarityFingerprint],
-        query_quality: int,
+        query_quality: int | None = None,
         exclude: Iterable[int] = (),
         limit: int = 25,
         before_position: int | None = None,
@@ -166,7 +189,8 @@ class NearMatchIndex:
         """
         if not query:
             raise NearMatchError("a search needs at least one similarity fingerprint")
-        validate_quality(query_quality)
+        if query_quality is not None:
+            validate_quality(query_quality)
         if limit <= 0:
             raise NearMatchError("limit must be positive")
         kinds = [f.kind for f in query]
@@ -208,8 +232,11 @@ class NearMatchIndex:
                 continue
             # The lowest quality recorded for a position governs. Last-row-wins
             # would make the safety cap depend on SQLite row order, so the same
-            # index content could give opposite verdicts.
-            qualities[position] = min(qualities.get(position, quality), quality)
+            # index content could give opposite verdicts. An unknown quality on
+            # any row makes the position unknown: it is not a number to be
+            # minimised against, and treating it as one would invent a
+            # measurement nobody took.
+            qualities[position] = _weaker_quality(qualities.get(position, quality), quality)
 
         candidates = []
         for position, prints in stored.items():
@@ -222,7 +249,7 @@ class NearMatchIndex:
                 continue
             # The lower of the two qualities governs: comparing a detailed work
             # against a flat one is only as reliable as the flat one.
-            quality = min(qualities[position], query_quality)
+            quality = _weaker_quality(qualities[position], query_quality)
             band, capped = classify(distances, quality)
             if band is None:
                 continue
@@ -243,7 +270,7 @@ class NearMatchIndex:
 
 def classify(
     distances: Mapping[SimilarityKind, int],
-    quality: int,
+    quality: int | None,
     tight: float = TIGHT,
     loose: float = LOOSE,
 ) -> tuple[Band | None, bool]:
@@ -259,7 +286,8 @@ def classify(
 
     if not distances:
         return None, False
-    validate_quality(quality)
+    if quality is not None:
+        validate_quality(quality)
 
     normalised = {
         kind: normalised_distance(distance, BIT_LENGTHS[kind])
@@ -279,7 +307,7 @@ def classify(
     else:
         return None, False
 
-    if quality < LOW_QUALITY_CEILING and band is not Band.WEAK:
+    if quality is not None and quality < LOW_QUALITY_CEILING and band is not Band.WEAK:
         return Band.WEAK, True
     return band, False
 

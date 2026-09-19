@@ -18,6 +18,7 @@ from certifiles.doh import default_resolver
 from certifiles.domains import new_server_secret
 from certifiles.log import TransparencyLog
 from certifiles.mail import FileMailer
+from certifiles.nearmatch import NearMatchIndex
 from certifiles.ratelimit import RateLimiter
 from certifiles.service import Services, serve
 from certifiles.sessions import SessionStore
@@ -73,6 +74,7 @@ if __name__ == "__main__":
         sessions=SessionStore(args.data / "sessions.db"),
         limiter=RateLimiter(args.data / "ratelimit.db"),
         log=TransparencyLog(args.data / "log.db"),
+        index=NearMatchIndex(args.data / "nearmatch.db"),
         web_root=args.web,
         tokens=TokenStore(args.data / "tokens.db"),
         mailer=FileMailer(args.data / "mail"),

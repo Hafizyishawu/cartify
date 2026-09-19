@@ -16,8 +16,10 @@ from pathlib import Path
 
 from certifiles.accounts import AccountStore, totp_code
 from certifiles.log import TransparencyLog
+from certifiles.nearmatch import NearMatchIndex
 from certifiles.ratelimit import DOMAIN_CHECK, SIGN_IN, WORK_REGISTRATION, RateLimiter
 from certifiles.record import AssuranceLevel
+from certifiles.similarity import SimilarityFingerprint, SimilarityKind
 from certifiles.service import SESSION_COOKIE, Services, serve
 from certifiles.sessions import SessionStore
 
@@ -349,6 +351,103 @@ class TestRegisteringWork(ServiceTestCase):
         client.request("POST", "/api/works", payload)
         leaf = self.log.entry(0).leaf_data.decode()
         self.assertNotIn("someone-elses-identity", leaf)
+
+
+class TestIndexing(ServiceTestCase):
+    """Registering a work makes it searchable, and never depends on doing so.
+
+    The log entry is the record. The index is a convenience rebuildable from it,
+    so the two are ordered deliberately: a work is logged first, and a failure
+    to index afterwards is reported rather than rolled back.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.index = NearMatchIndex()
+        self.addCleanup(self.index.close)
+        self.services.index = self.index
+
+    def payload(self, sha=SHA, **extra):
+        body = {
+            "sha256": sha, "media_type": "image/png", "size_bytes": 1024,
+            "similarity_fingerprints": {"phash": "c3a90f7e21b45d80"},
+            "derivation_version": 1, "claim_type": "created",
+        }
+        body.update(extra)
+        return body
+
+    def test_a_registered_work_becomes_searchable(self):
+        client, _ = self.with_mfa()
+        status, body = client.request("POST", "/api/works", self.payload())
+        self.assertEqual(status, 201)
+        self.assertTrue(body["searchable"])
+        self.assertEqual(self.index.size(), 1)
+
+    def test_the_indexed_position_is_the_log_position(self):
+        # An index keyed to the wrong position would surface the wrong record
+        # to an artist, which is an accusation pointed at a stranger.
+        client, _ = self.with_mfa()
+        client.request("POST", "/api/works", self.payload(sha="a" * 64))
+        _, second = client.request("POST", "/api/works", self.payload(sha="b" * 64))
+        found = self.index.search(
+            [SimilarityFingerprint(SimilarityKind.PHASH, "c3a90f7e21b45d80")]
+        )
+        self.assertEqual(sorted(c.position for c in found), [0, 1])
+        self.assertEqual(second["position"], 1)
+
+    def test_a_work_with_no_fingerprints_is_never_offered_to_the_index(self):
+        # Not an error. Most files are not images, and a work that cannot be
+        # searched should say so rather than occupy an empty index row.
+        #
+        # Asserting the call never happens, not just that nothing was stored:
+        # the index refuses an empty set on its own, so a test that only
+        # checked size would pass with the guard removed and rely on an
+        # exception for ordinary control flow.
+        calls = []
+
+        class Recording:
+            def add(self, *args, **kwargs):
+                calls.append(args)
+
+        self.services.index = Recording()
+        client, _ = self.with_mfa()
+        status, body = client.request(
+            "POST", "/api/works", self.payload(similarity_fingerprints={},
+                                               derivation_version=None))
+        self.assertEqual(status, 201)
+        self.assertEqual(calls, [])
+        self.assertFalse(body["searchable"])
+
+    def test_an_index_failure_does_not_lose_the_registration(self):
+        class Broken:
+            def add(self, *_args, **_kwargs):
+                raise RuntimeError("index unavailable")
+
+        self.services.index = Broken()
+        client, _ = self.with_mfa()
+        status, body = client.request("POST", "/api/works", self.payload())
+        self.assertEqual(status, 201)
+        self.assertFalse(body["searchable"])
+        self.assertEqual(self.log.size(), 1)
+
+    def test_indexing_survives_an_absent_quality(self):
+        # Derivation version 1 computes no quality, so this is the ordinary
+        # case rather than an edge one.
+        client, _ = self.with_mfa()
+        client.request("POST", "/api/works", self.payload())
+        found = self.index.search(
+            [SimilarityFingerprint(SimilarityKind.PHASH, "c3a90f7e21b45d80")]
+        )
+        self.assertEqual(len(found), 1)
+        self.assertIsNone(found[0].quality)
+        self.assertFalse(found[0].quality_capped)
+
+    def test_nothing_is_indexed_when_no_index_is_configured(self):
+        self.services.index = None
+        client, _ = self.with_mfa()
+        status, body = client.request("POST", "/api/works", self.payload())
+        self.assertEqual(status, 201)
+        self.assertFalse(body["searchable"])
 
 
 class TestNotFound(ServiceTestCase):

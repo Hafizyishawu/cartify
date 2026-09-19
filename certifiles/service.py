@@ -107,6 +107,9 @@ class Services:
     tokens: TokenStore = None
     mailer: object = None
     resolver: object = None
+    # Rebuildable from the published log, so it is not part of the evidence and
+    # a failure to index must never fail a registration.
+    index: object = None
     domain_secret: bytes = b""
     base_url: str = "http://127.0.0.1:8770"
     origin: str = "certifiles.example/log"
@@ -375,11 +378,31 @@ class Handler(BaseHTTPRequestHandler):
             declared_created_at=body.get("declared_created_at"),
         )
         entry = self.services.log.append(record)
+
+        # Indexed after the log, never before. The log entry is the record and
+        # the index is a search convenience rebuildable from it, so the order
+        # decides which one is authoritative when they disagree. A work with no
+        # similarity fingerprints is skipped rather than indexed empty: it
+        # simply cannot be searched, and the record says so.
+        indexed = False
+        if self.services.index is not None and fingerprints:
+            try:
+                self.services.index.add(
+                    entry.position, fingerprints, record.content.quality
+                )
+                indexed = True
+            except Exception:
+                # The claim is already in the log and witnessed on the next
+                # checkpoint. Refusing the registration now would discard a
+                # permanent record over a cache that can be rebuilt.
+                indexed = False
+
         self._send_json(201, {
             "position": entry.position,
             "leaf_hash": entry.leaf_hash.hex(),
             "log_size": self.services.log.size(),
             "assurance_level": str(account.assurance_level),
+            "searchable": indexed,
             "note": "Awaiting the next published checkpoint before it can be verified.",
         })
 
