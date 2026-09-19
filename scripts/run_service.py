@@ -9,11 +9,14 @@ plain HTTP, and that is exactly the setting to turn back on anywhere else.
 
 import argparse
 import sys
+import threading
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from certifiles.accounts import AccountStore
+from certifiles.alerts import AlertStore, deliver
 from certifiles.doh import default_resolver
 from certifiles.domains import new_server_secret
 from certifiles.log import TransparencyLog
@@ -62,6 +65,10 @@ if __name__ == "__main__":
         help="set the Secure flag; required anywhere the site is served over TLS",
     )
     parser.add_argument(
+        "--alert-interval", type=int, default=15,
+        help="seconds between alert delivery sweeps in this dev process",
+    )
+    parser.add_argument(
         "--dns", choices=("doh", "none"), default="doh",
         help="doh queries two independent DNS-over-HTTPS resolvers and requires "
              "them to agree; none refuses every lookup, for running offline",
@@ -75,6 +82,7 @@ if __name__ == "__main__":
         limiter=RateLimiter(args.data / "ratelimit.db"),
         log=TransparencyLog(args.data / "log.db"),
         index=NearMatchIndex(args.data / "nearmatch.db"),
+        alerts=AlertStore(args.data / "alerts.db"),
         web_root=args.web,
         tokens=TokenStore(args.data / "tokens.db"),
         mailer=FileMailer(args.data / "mail"),
@@ -83,10 +91,25 @@ if __name__ == "__main__":
         base_url=f"http://127.0.0.1:{args.port}",
         secure_cookies=args.secure_cookies,
     )
+    # Production runs scripts/deliver_alerts.py as a scheduled worker. A thread
+    # here keeps the dev loop honest: queueing and sending stay separate, and
+    # the alert actually arrives without anyone remembering to run a script.
+    def drain():
+        while True:
+            time.sleep(args.alert_interval)
+            try:
+                deliver(services.alerts, services.accounts, services.mailer,
+                        services.base_url)
+            except Exception as error:
+                print(f"  alert delivery failed: {error}")
+
+    threading.Thread(target=drain, daemon=True).start()
+
     server = serve(services, port=args.port)
     print(f"  certifiles on http://127.0.0.1:{server.server_address[1]}")
     print(f"  data in {args.data}/   web from {args.web}/")
     print(f"  email is written to {args.data}/mail/ and not delivered")
+    print(f"  near-match alerts are delivered every {args.alert_interval}s")
     if args.dns == "doh":
         print("  domain checks query two DNS-over-HTTPS resolvers and require agreement")
     else:

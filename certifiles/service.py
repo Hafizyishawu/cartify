@@ -29,6 +29,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 
+from certifiles.alerts import plan as alert_plan
 from certifiles.accounts import (
     MIN_PASSWORD_LENGTH,
     AccountError,
@@ -110,6 +111,7 @@ class Services:
     # Rebuildable from the published log, so it is not part of the evidence and
     # a failure to index must never fail a registration.
     index: object = None
+    alerts: object = None
     domain_secret: bytes = b""
     base_url: str = "http://127.0.0.1:8770"
     origin: str = "certifiles.example/log"
@@ -397,12 +399,32 @@ class Handler(BaseHTTPRequestHandler):
                 # permanent record over a cache that can be rebuilt.
                 indexed = False
 
+        # Alerts are queued here and delivered elsewhere. Planning is a local
+        # read; sending is an SMTP round trip, and putting that in the write
+        # path would make registering a work as slow and as failure-prone as
+        # the mail server.
+        alerts_queued = None
+        if indexed and self.services.alerts is not None:
+            try:
+                alerts_queued = self.services.alerts.queue(alert_plan(
+                    self.services.log, self.services.index, entry.position,
+                    fingerprints, record.content.quality, account.identity_id,
+                ))
+            except Exception as error:
+                # Same reasoning as the index: a notification about a record
+                # must never cost the record. But it is reported rather than
+                # swallowed, because an alert channel that has quietly stopped
+                # working is indistinguishable from one with nothing to say.
+                self.log_error("alert planning failed at position %s: %s",
+                               entry.position, error)
+
         self._send_json(201, {
             "position": entry.position,
             "leaf_hash": entry.leaf_hash.hex(),
             "log_size": self.services.log.size(),
             "assurance_level": str(account.assurance_level),
             "searchable": indexed,
+            "alerts_queued": alerts_queued,
             "note": "Awaiting the next published checkpoint before it can be verified.",
         })
 

@@ -16,6 +16,7 @@ from pathlib import Path
 
 from certifiles.accounts import AccountStore, totp_code
 from certifiles.log import TransparencyLog
+from certifiles.alerts import AlertStore
 from certifiles.nearmatch import NearMatchIndex
 from certifiles.ratelimit import DOMAIN_CHECK, SIGN_IN, WORK_REGISTRATION, RateLimiter
 from certifiles.record import AssuranceLevel
@@ -441,6 +442,63 @@ class TestIndexing(ServiceTestCase):
         self.assertEqual(len(found), 1)
         self.assertIsNone(found[0].quality)
         self.assertFalse(found[0].quality_capped)
+
+    def test_a_near_match_queues_an_alert_for_the_earlier_registrant(self):
+        store = AlertStore()
+        self.addCleanup(store.close)
+        self.services.alerts = store
+
+        first, _ = self.with_mfa()
+        first.request("POST", "/api/works", self.payload(sha="a" * 64))
+
+        second = Client(self.client.base)
+        second.request("POST", "/api/accounts",
+                       {"email": "other@example.com", "password": PASSWORD})
+        second.refresh_csrf()
+        _, enrol = second.request("POST", "/api/mfa/enrol", {})
+        import base64
+        import time as _t
+        b32 = enrol["otpauth_uri"].split("secret=")[1].split("&")[0]
+        secret = base64.b32decode(b32 + "=" * (-len(b32) % 8))
+        second.request("POST", "/api/mfa/confirm",
+                       {"code": totp_code(secret, int(_t.time() // 30))})
+        second.refresh_csrf()
+        second.request("POST", "/api/works", self.payload(sha="b" * 64))
+
+        queued = store.undelivered()
+        self.assertEqual(len(queued), 1)
+        self.assertEqual((queued[0].subject_position, queued[0].candidate_position), (0, 1))
+
+    def test_registering_against_your_own_work_queues_nothing(self):
+        store = AlertStore()
+        self.addCleanup(store.close)
+        self.services.alerts = store
+        client, _ = self.with_mfa()
+        client.request("POST", "/api/works", self.payload(sha="a" * 64))
+        client.request("POST", "/api/works", self.payload(sha="b" * 64))
+        self.assertEqual(store.undelivered(), [])
+
+    def test_an_alert_failure_does_not_lose_the_registration(self):
+        class Broken:
+            def queue(self, *_a, **_k):
+                raise RuntimeError("alert store unavailable")
+
+        self.services.alerts = Broken()
+        client, _ = self.with_mfa()
+        status, body = client.request("POST", "/api/works", self.payload())
+        self.assertEqual(status, 201)
+        self.assertEqual(self.log.size(), 1)
+        # Reported, not swallowed. An alert channel that has quietly stopped
+        # working looks exactly like one with nothing to say.
+        self.assertIsNone(body["alerts_queued"])
+
+    def test_a_successful_registration_reports_how_many_alerts_it_queued(self):
+        store = AlertStore()
+        self.addCleanup(store.close)
+        self.services.alerts = store
+        client, _ = self.with_mfa()
+        _, body = client.request("POST", "/api/works", self.payload())
+        self.assertEqual(body["alerts_queued"], 0)
 
     def test_nothing_is_indexed_when_no_index_is_configured(self):
         self.services.index = None
