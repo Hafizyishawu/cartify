@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Create an account · Certifiles</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="./certifiles.css">
+</head>
+<body>
+<div class="wrap">
+  <div id="nav"></div>
+  <h1>Create an account</h1>
+  <p class="lead">You need an account to register work and to receive monitoring alerts.
+    You do not need one to check anything.</p>
+
+  <div class="form" id="step-account">
+    <div id="error"></div>
+    <div class="field">
+      <label for="email">Email address</label>
+      <input id="email" type="email" autocomplete="email" spellcheck="false">
+      <div class="hint">Used to sign in and to reach you. It never enters the public log.</div>
+    </div>
+    <div class="field">
+      <label for="password">Password</label>
+      <input id="password" type="password" autocomplete="new-password">
+      <div class="hint">At least 12 characters. Length beats punctuation.</div>
+    </div>
+    <button id="create" type="button">Create account</button>
+    <p class="alt">Already have one? <a href="./sign-in.html">Sign in</a>.</p>
+  </div>
+
+  <div class="form" id="step-mfa" hidden>
+    <div class="ok">Account created. One more step before you can register work.</div>
+    <h2 style="font-size:19px;margin:0 0 8px">Set up your second factor</h2>
+    <p class="muted" style="font-size:13.5px">Registering a work is asserting authorship, so
+      an account that can do it needs more than a password. Add this to any authenticator
+      app.</p>
+    <div class="secret" id="uri"></div>
+    <div class="field">
+      <label for="code">Six digit code</label>
+      <input id="code" class="mono" inputmode="numeric" autocomplete="one-time-code"
+             maxlength="6">
+    </div>
+    <div id="mfa-error"></div>
+    <button id="confirm" type="button">Confirm and finish</button>
+  </div>
+
+  <div class="form" id="step-done" hidden>
+    <div class="ok">You are set up.</div>
+    <p class="muted">Your public identity is <span class="mono" id="identity"></span>. That is
+      what appears on a record, and it cannot be traced back to your email address.</p>
+
+    <h2 style="font-size:19px;margin:24px 0 8px">Save your recovery codes</h2>
+    <p class="muted" style="font-size:13.5px">Shown once, now. They are stored hashed, so
+      nobody, including us, can display them again. Each works once, and they are the only way
+      back in if you lose your authenticator.</p>
+    <div class="secret" id="codes"></div>
+
+    <div class="callout">
+      <p>We have also emailed a link to confirm your address. Confirming raises the assurance
+        recorded on work you register from then on. Records already made keep the level they
+        were issued under.</p>
+    </div>
+    <p><a href="./register-work.html">Register a work</a> ·
+       <a href="./studio.html">Monitoring</a></p>
+  </div>
+</div>
+
+<script type="module" src="./pages/register.js"></script>
+</body>
+</html>

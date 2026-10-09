@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Account settings · Certifiles</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="./certifiles.css">
+</head>
+<body>
+<div class="wrap">
+  <div id="nav"></div>
+  <h1>Account settings</h1>
+  <p class="lead">Your assurance level is the strength of the identity claim recorded on
+    work you register. Raising it changes what future records say. It cannot reach back and
+    change one already in the log.</p>
+
+  <div id="gate"></div>
+
+  <div id="account" hidden>
+    <h2 style="font-size:15px;font-weight:600;margin:0 0 10px">Assurance</h2>
+    <div class="ladder" id="ladder"></div>
+
+    <h2 style="font-size:15px;font-weight:600;margin:0 0 6px">Prove a domain</h2>
+    <p class="lede">Publish a TXT record on a domain you control. A buyer who recognises
+      <span class="mono">your-studio.com</span> learns more from that than from an opaque
+      account identifier, which is the whole reason this rung exists.</p>
+
+    <div class="callout">
+      <p>The check queries two independent DNS resolvers and requires both to return the
+        same record. One resolver answering alone is what a poisoned cache looks like, and
+        it is also what ordinary mid-propagation DNS looks like. Neither is proof.</p>
+    </div>
+
+    <div id="email-gate"></div>
+
+    <div class="form">
+      <div id="error"></div>
+
+      <div class="field">
+        <label for="domain">Domain</label>
+        <input id="domain" type="text" inputmode="url" autocomplete="off"
+               spellcheck="false" placeholder="your-studio.com">
+        <div class="hint">The bare name. A scheme, a <span class="mono">www.</span> prefix,
+          or a trailing dot are stripped for you.</div>
+      </div>
+
+      <button id="get-record" type="button">Show the record to publish</button>
+    </div>
+
+    <div id="challenge" hidden></div>
+  </div>
+</div>
+
+<script type="module" src="./pages/settings.js"></script>
+</body>
+</html>

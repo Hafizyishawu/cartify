@@ -4,6 +4,75 @@ Cartify is a digital authorship and certification system for artists. It fingerp
 
 ---
 
+## Where this is going: Certifiles
+
+Cartify is the working prototype for **Certifiles**, an authorship and provenance service
+for any digital file rather than artwork alone. The pipeline below stays as it is; what
+changes is where its output goes. Cartify's hashing becomes the client that
+produces records, and those records are entered into a public append-only transparency
+log that anyone can verify without trusting the operator.
+
+Two limits are stated deliberately, because the design depends on them:
+
+- **A hash proves integrity and time, not authorship.** Registration proves who
+  registered a file, not who created it.
+- **This cannot detect AI-generated content.** It is a positive-attestation system. A
+  record says a declared identity claimed a file at a point in time. The absence of a
+  record proves nothing at all.
+
+The design is written down before it is built:
+
+| Document | Covers |
+|---|---|
+| [Threat model](docs/architecture/threat-model-registration.md) | Registration and verification, eight threats, and the controls that make each structurally hard rather than merely detectable |
+| [ADR 0001: Witness policy](docs/decisions/0001-witness-policy.md) | Staged K-of-N witness quorum, policy versioning, and the six verifier outcomes |
+
+Three decisions in there cannot be retrofitted once production records exist: record
+validity is defined as log inclusion rather than a valid signature, external witnessing
+must precede the first record, and the record schema carries identity fields from version
+one.
+
+---
+
+## Transparency log core
+
+`certifiles/` holds the log primitives.
+
+- `certifiles/merkle.py` — RFC 6962 tree hashing, inclusion and consistency proofs, and
+  both verification routines. Consistency verification is what a witness runs before
+  cosigning a tree head. Standard library only.
+- `certifiles/record.py` — the record entered into the log, with canonical serialization.
+  Identity is an opaque token and there is no self-asserted registration timestamp; both
+  are enforced in validation rather than left to convention. Standard library only.
+- `certifiles/checkpoint.py` — signed tree heads in the note format, plus the
+  distinct-witness quorum check from ADR 0001. Deliberately contains no cryptography, so
+  the wire format can be built and parsed anywhere. Standard library only.
+- `certifiles/signing.py` — Ed25519 behind the signer boundary. The in-process signer is
+  for development only; the production signer must call a KMS that never releases key
+  material. Requires `cryptography`.
+
+```bash
+python3 -m unittest discover -s tests -t .
+```
+
+The suite runs without any dependency installed; the signing tests skip. Install
+`cryptography` from `requirements.txt` to run them, and run them before showing a
+checkpoint to a prospective witness — they are what prove a checkpoint Certifiles emits
+is actually verifiable.
+
+Merkle correctness is cross-validated over every index of every tree size up to 33 in
+both directions rather than against copied vectors, because the failure that matters is a
+proof that verifies when it should not.
+
+Status: primitives only. There is no server, no key custody, no witness integration and
+no verifier CLI yet. Two conformance gaps are open and both must close before a
+production record exists: RFC 6962's published test vectors are not yet asserted, and the
+checkpoint format follows the note and tlog-checkpoint conventions as understood here
+rather than as validated against the published C2SP specification. The current tests
+prove self-consistency, which is not the same as interoperability.
+
+---
+
 ## Features
 
 - Folder watching for incoming artworks
@@ -125,11 +194,20 @@ MIT License — Free to use, modify, and distribute.
 ```bash
 cartify/
 ├── cartify_watcher_2.0.3.py
+├── cartify_embed_stego.py
+├── cartify_extract_stego.py
 ├── drive_upload.py
+├── certifiles/              # transparency log core
+│   ├── merkle.py
+│   └── record.py
+├── tests/
+├── docs/
+│   ├── architecture/        # threat model
+│   └── decisions/           # ADRs
 ├── template/
 ├── assets/
-├── config.json (auto-generated)
-└── token.json (auto-generated)
+├── config.json (auto-generated, git-ignored)
+└── token.json (auto-generated, git-ignored)
 ```
 
 ---

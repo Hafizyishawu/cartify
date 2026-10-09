@@ -1,0 +1,278 @@
+"""Record schema and canonicalization tests.
+
+Canonical bytes are the contract between this implementation and any verifier
+written later in another language. A change in these bytes invalidates every
+proof already issued, so the tests pin the exact output rather than only
+checking round-trips.
+"""
+
+import json
+import unittest
+
+from certifiles.merkle import leaf_hash
+from certifiles.similarity import SimilarityFingerprint, SimilarityKind
+from certifiles.record import (
+    AssuranceLevel,
+    ClaimType,
+    Content,
+    Issuer,
+    Record,
+    RecordError,
+    canonicalize,
+    validate,
+)
+
+VALID_SHA = "a" * 64
+VALID_ID = "op4Que-Identifier_01"
+
+
+def sample(**overrides) -> Record:
+    fields = {
+        "content": Content(sha256=VALID_SHA, media_type="image/png", size_bytes=1024),
+        "issuer": Issuer(
+            identity_id=VALID_ID,
+            assurance_level=AssuranceLevel.EMAIL,
+            key_id="key-2026-09",
+        ),
+        "claim_type": ClaimType.CREATED,
+        "policy_version": 1,
+    }
+    fields.update(overrides)
+    return Record(**fields)
+
+
+class TestCanonicalization(unittest.TestCase):
+    def test_key_order_does_not_affect_output(self):
+        a = canonicalize({"b": 1, "a": 2, "c": {"z": 1, "y": 2}})
+        b = canonicalize({"c": {"y": 2, "z": 1}, "a": 2, "b": 1})
+        self.assertEqual(a, b)
+
+    def test_no_insignificant_whitespace(self):
+        self.assertEqual(canonicalize({"a": 1, "b": [1, 2]}), b'{"a":1,"b":[1,2]}')
+
+    def test_unicode_is_utf8_not_escaped(self):
+        self.assertEqual(canonicalize({"k": "café"}), '{"k":"café"}'.encode("utf-8"))
+
+    def test_floats_are_rejected(self):
+        with self.assertRaises(RecordError):
+            canonicalize({"size": 1.0})
+        with self.assertRaises(RecordError):
+            canonicalize({"nested": {"list": [1, 2.5]}})
+
+    def test_unsupported_types_are_rejected(self):
+        with self.assertRaises(RecordError):
+            canonicalize({"when": object()})
+
+    def test_output_is_valid_json_that_round_trips(self):
+        record = sample()
+        self.assertEqual(json.loads(record.leaf_data()), record.to_dict())
+
+    def test_leaf_bytes_are_stable_for_equal_records(self):
+        self.assertEqual(sample().leaf_data(), sample().leaf_data())
+
+    def test_pinned_canonical_bytes(self):
+        # Pinned deliberately. If this assertion needs changing, every proof
+        # already issued over the old bytes is invalidated, which is a schema
+        # version bump rather than a test update.
+        self.assertEqual(
+            sample().leaf_data(),
+            (
+                '{"claim_type":"created",'
+                '"content":{"media_type":"image/png","sha256":"' + VALID_SHA + '",'
+                '"size_bytes":1024},'
+                '"issuer":{"assurance_level":"email","identity_id":"' + VALID_ID + '",'
+                '"key_id":"key-2026-09"},'
+                '"policy_version":1,"schema_version":1}'
+            ).encode("utf-8"),
+        )
+
+
+class TestFieldSensitivity(unittest.TestCase):
+    def test_every_field_change_changes_the_leaf_hash(self):
+        base = leaf_hash(sample().leaf_data())
+        variants = {
+            "sha256": sample(
+                content=Content(sha256="b" * 64, media_type="image/png", size_bytes=1024)
+            ),
+            "media_type": sample(
+                content=Content(sha256=VALID_SHA, media_type="image/jpeg", size_bytes=1024)
+            ),
+            "size_bytes": sample(
+                content=Content(sha256=VALID_SHA, media_type="image/png", size_bytes=1025)
+            ),
+            "similarity_fingerprints": sample(
+                content=Content(
+                    sha256=VALID_SHA,
+                    media_type="image/png",
+                    size_bytes=1024,
+                    similarity_fingerprints=(SimilarityFingerprint(SimilarityKind.PHASH, "c3a90f7e21b45d80"),),
+                    derivation_version=1,
+                )
+            ),
+            "quality": sample(
+                content=Content(VALID_SHA, "image/png", 1024, (), 61)
+            ),
+            "assurance_level": sample(
+                issuer=Issuer(VALID_ID, AssuranceLevel.DOMAIN, "key-2026-09")
+            ),
+            "identity_id": sample(
+                issuer=Issuer("another-identity-01", AssuranceLevel.EMAIL, "key-2026-09")
+            ),
+            "key_id": sample(issuer=Issuer(VALID_ID, AssuranceLevel.EMAIL, "key-2026-10")),
+            "claim_type": sample(claim_type=ClaimType.SYNTHETIC),
+            "policy_version": sample(policy_version=2),
+            "declared_created_at": sample(declared_created_at="2026-09-04T00:00:00Z"),
+        }
+        for name, variant in variants.items():
+            with self.subTest(field=name):
+                self.assertNotEqual(base, leaf_hash(variant.leaf_data()))
+
+    def test_fingerprint_order_does_not_change_the_leaf(self):
+        # Keyed by algorithm, so two clients listing them differently produce
+        # identical bytes and identical proofs.
+        a = SimilarityFingerprint(SimilarityKind.PHASH, "c3a90f7e21b45d80")
+        b = SimilarityFingerprint(SimilarityKind.DHASH, "9e2b17c0da45f381")
+        first = sample(content=Content(VALID_SHA, "image/png", 10, (a, b), 80, 1))
+        second = sample(content=Content(VALID_SHA, "image/png", 10, (b, a), 80, 1))
+        self.assertEqual(first.leaf_data(), second.leaf_data())
+
+    def test_fingerprints_without_a_derivation_version_are_rejected(self):
+        # Two values from different pipelines are not comparable, and the file
+        # is never stored, so a record that does not say which one produced its
+        # fingerprints can never be placed against any other.
+        a = SimilarityFingerprint(SimilarityKind.PHASH, "c3a90f7e21b45d80")
+        with self.assertRaises(RecordError):
+            sample(content=Content(VALID_SHA, "image/png", 10, (a,), 80)).leaf_data()
+
+    def test_a_record_with_no_fingerprints_needs_no_version(self):
+        sample(content=Content(VALID_SHA, "image/png", 10)).leaf_data()
+
+    def test_the_derivation_version_must_be_a_positive_integer(self):
+        a = SimilarityFingerprint(SimilarityKind.PHASH, "c3a90f7e21b45d80")
+        for bad in (0, -1, 1.0, True, "1"):
+            with self.subTest(version=bad):
+                with self.assertRaises(RecordError):
+                    sample(content=Content(
+                        VALID_SHA, "image/png", 10, (a,), 80, bad)).leaf_data()
+
+    def test_the_derivation_version_changes_the_leaf(self):
+        a = SimilarityFingerprint(SimilarityKind.PHASH, "c3a90f7e21b45d80")
+        one = sample(content=Content(VALID_SHA, "image/png", 10, (a,), 80, 1))
+        two = sample(content=Content(VALID_SHA, "image/png", 10, (a,), 80, 2))
+        self.assertNotEqual(one.leaf_data(), two.leaf_data())
+
+    def test_duplicate_fingerprint_kinds_are_rejected(self):
+        a = SimilarityFingerprint(SimilarityKind.PHASH, "c3a90f7e21b45d80")
+        b = SimilarityFingerprint(SimilarityKind.PHASH, "0000000000000000")
+        with self.assertRaises(RecordError):
+            validate(sample(content=Content(VALID_SHA, "image/png", 10, (a, b), 80)))
+
+    def test_out_of_range_quality_is_rejected(self):
+        for bad in (-1, 101, True):
+            with self.subTest(quality=bad):
+                with self.assertRaises(RecordError):
+                    validate(sample(content=Content(VALID_SHA, "image/png", 10, (), bad)))
+
+    def test_omitted_optional_field_differs_from_empty_string(self):
+        with_none = sample().leaf_data()
+        with_empty = sample(declared_created_at="").leaf_data()
+        self.assertNotEqual(with_none, with_empty)
+
+
+class TestValidation(unittest.TestCase):
+    def test_valid_record_passes(self):
+        validate(sample())
+
+    def test_malformed_content_hash_is_rejected(self):
+        for bad in ("", "xyz", "A" * 64, "a" * 63, "a" * 65):
+            with self.subTest(sha=bad):
+                with self.assertRaises(RecordError):
+                    validate(
+                        sample(
+                            content=Content(
+                                sha256=bad, media_type="image/png", size_bytes=1
+                            )
+                        )
+                    )
+
+    def test_identity_that_looks_like_personal_data_is_rejected(self):
+        # T8: an append-only log cannot honour erasure, so contact details must
+        # never become an identifier in the first place.
+        for bad in ("hafiz@example.com", "Hafiz Yishawu", "short", "a" * 129):
+            with self.subTest(identity=bad):
+                with self.assertRaises(RecordError):
+                    validate(
+                        sample(
+                            issuer=Issuer(bad, AssuranceLevel.EMAIL, "key-2026-09")
+                        )
+                    )
+
+    def test_missing_key_id_is_rejected(self):
+        with self.assertRaises(RecordError):
+            validate(sample(issuer=Issuer(VALID_ID, AssuranceLevel.EMAIL, "")))
+
+    def test_bad_policy_version_is_rejected(self):
+        for bad in (0, -1):
+            with self.subTest(version=bad):
+                with self.assertRaises(RecordError):
+                    validate(sample(policy_version=bad))
+
+    def test_negative_size_is_rejected(self):
+        with self.assertRaises(RecordError):
+            validate(
+                sample(content=Content(VALID_SHA, "image/png", -1))
+            )
+
+    def test_missing_media_type_is_rejected(self):
+        with self.assertRaises(RecordError):
+            validate(sample(content=Content(VALID_SHA, "", 10)))
+
+    def test_unsupported_schema_version_is_rejected(self):
+        with self.assertRaises(RecordError):
+            validate(sample(schema_version=99))
+
+    def test_record_carries_no_registration_timestamp(self):
+        # Time comes from the log position and the witnessed tree head, never
+        # from a field the issuer controls.
+        keys = set(sample().to_dict())
+        self.assertNotIn("registered_at", keys)
+        self.assertNotIn("timestamp", keys)
+
+
+class TestAdversarialFindings(unittest.TestCase):
+    """Regressions for defects found by adversarial review."""
+
+    def test_leaf_data_validates(self):
+        # validate() was a separate function nothing on the write path called,
+        # so an invalid record canonicalised straight into leaf bytes.
+        invalid = sample(content=Content(sha256="NOT A HASH", media_type="", size_bytes=-5))
+        with self.assertRaises(RecordError):
+            invalid.leaf_data()
+
+    def test_unpaired_surrogate_is_refused_not_crashed(self):
+        # Passed every pattern check, then raised UnicodeEncodeError from
+        # canonicalize — an unhandled non-RecordError on the write path.
+        bad = sample(content=Content(VALID_SHA, "image/\ud800", 10))
+        with self.assertRaises(RecordError):
+            validate(bad)
+        with self.assertRaises(RecordError):
+            bad.leaf_data()
+
+    def test_non_string_fields_are_rejected(self):
+        for case, record in {
+            "int media_type": sample(content=Content(VALID_SHA, 7, 10)),
+            "int sha256": sample(content=Content(7, "image/png", 10)),
+            "int key_id": sample(issuer=Issuer(VALID_ID, AssuranceLevel.EMAIL, 7)),
+            "int identity_id": sample(issuer=Issuer(7, AssuranceLevel.EMAIL, "k")),
+        }.items():
+            with self.subTest(case=case):
+                with self.assertRaises(RecordError):
+                    validate(record)
+
+    def test_bool_is_not_an_integer_size(self):
+        with self.assertRaises(RecordError):
+            validate(sample(content=Content(VALID_SHA, "image/png", True)))
+
+
+if __name__ == "__main__":
+    unittest.main()

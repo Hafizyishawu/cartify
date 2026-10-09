@@ -25,3 +25,12 @@ cartify-push-token
 
 # Ignore virtualenv
 venv/
+
+# Generated demo log for the verify page
+web/log/
+
+# Service databases
+var/
+
+# Local assessment notes, not part of the repository
+ROBUSTNESS_ASSESSMENT.md
