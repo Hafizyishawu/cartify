@@ -198,3 +198,8 @@ td{padding:12px 8px 12px 0;border-bottom:1px solid var(--rule)}
 .copyable{display:flex;gap:8px;align-items:flex-start;margin:0 0 14px}
 .copyable .secret{flex:1;margin:0}
 .copyable button{width:auto;flex:none;padding:8px 12px;font-size:12px}
+
+/* ---- inline provenance notes --------------------------------------------- */
+.notice{border-left:2px solid var(--rule-firm);padding:2px 0 2px 14px;margin:0 0 20px;
+        font-size:12.5px;color:var(--muted);max-width:66ch}
+.notice.warn{border-left-color:var(--invalid);color:var(--ink)}

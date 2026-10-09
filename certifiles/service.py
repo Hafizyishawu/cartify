@@ -207,6 +207,8 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if path == "/api/me":
                 return self._get_me()
+            if path == "/api/monitoring":
+                return self._get_monitoring()
             return self._serve_static(path)
         except ApiError as error:
             self._send_json(error.status, {"error": error.message},
@@ -260,6 +262,81 @@ class Handler(BaseHTTPRequestHandler):
             "mfa_passed": session.mfa_passed,
             "may_register_works": account.may_register_works and session.mfa_passed,
             "csrf_token": session.csrf_token,
+        })
+
+    def _get_monitoring(self):
+        """The caller's own works, and what has been registered resembling them.
+
+        Scoped by session, never by a parameter. The published log is public and
+        the old page took an identity from the query string, which meant anyone
+        could read anyone's monitoring view.
+
+        The search runs here because the alternative is the browser downloading
+        every record in the log to do it locally, which stops working long
+        before the log gets interesting. What does not move is the evidence: the
+        server names positions, and the page verifies inclusion for those
+        records itself, because a similarity search is a hint and an inclusion
+        proof is a fact.
+        """
+        _, session = self._require_session()
+        account = self.services.accounts.by_identity(session.identity_id)
+        works = []
+        for entry in self.services.log.claims_by(account.identity_id):
+            record = json.loads(entry.leaf_data)
+            works.append({
+                "position": entry.position,
+                "content_hash": entry.content_hash,
+                "media_type": record["content"]["media_type"],
+                "quality": record["content"].get("quality"),
+                "similarity_fingerprints":
+                    record["content"].get("similarity_fingerprints", {}),
+            })
+
+        matches = []
+        if self.services.index is not None:
+            for work in works:
+                prints = tuple(
+                    SimilarityFingerprint(SimilarityKind(kind), value)
+                    for kind, value in sorted(work["similarity_fingerprints"].items())
+                )
+                if not prints:
+                    continue
+                # The dashboard direction: work registered AFTER mine that
+                # resembles mine. monitor() is the inverse, used when a new
+                # registration goes in to alert whoever came first.
+                for candidate in self.services.index.search(
+                    prints, work["quality"],
+                    exclude={work["position"]},
+                    after_position=work["position"],
+                ):
+                    entry = self.services.log.entry(candidate.position)
+                    if entry is None or entry.identity_id == account.identity_id:
+                        continue
+                    other = json.loads(entry.leaf_data)
+                    matches.append({
+                        "subject_position": work["position"],
+                        "candidate_position": candidate.position,
+                        "band": str(candidate.band),
+                        "distances": {str(k): v for k, v in candidate.distances.items()},
+                        "quality": candidate.quality,
+                        "quality_capped": candidate.quality_capped,
+                        "candidate": {
+                            "identity_id": other["issuer"]["identity_id"],
+                            "assurance_level": other["issuer"]["assurance_level"],
+                            "content_hash": entry.content_hash,
+                            "media_type": other["content"]["media_type"],
+                            "quality": other["content"].get("quality"),
+                        },
+                    })
+
+        order = {"strong_candidate": 0, "possible": 1, "weak": 2}
+        matches.sort(key=lambda m: (order[m["band"]], m["candidate_position"]))
+        self._send_json(200, {
+            "identity_id": account.identity_id,
+            "works": works,
+            "matches": matches,
+            "log_size": self.services.log.size(),
+            "searched": self.services.index is not None,
         })
 
     def _post_account(self):

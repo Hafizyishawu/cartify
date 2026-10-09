@@ -62,3 +62,35 @@ for (const [i, c] of nm.cases.entries()) {
 }
 console.log(`  ${nmPass}/${nm.cases.length} banding decisions agreed`);
 if (fail) process.exit(1);
+
+// ---- published-record agreement --------------------------------------------
+// Verifying position N proves something is in the log at N. It does not prove
+// it is the record you were told about, and the live log runs ahead of
+// publication, so N can hold a different record entirely. This is the check
+// that stops the page showing a reassuring "valid" for the wrong record.
+{
+  const { agreesWithPublished } = await import("../verify.js");
+  const HASH = "a".repeat(64);
+  const OTHER = "b".repeat(64);
+  const proof = (status, sha) => ({ status, record: { content: { sha256: sha } } });
+
+  const cases = [
+    ["matching record, valid head", proof("valid", HASH), HASH, "verified"],
+    ["matching record, awaiting witnesses", proof("pending_witness", HASH), HASH, "verified"],
+    ["matching record, underwitnessed", proof("valid_underwitnessed", HASH), HASH, "verified"],
+    ["different record at that position", proof("valid", OTHER), HASH, "mismatch"],
+    ["no record published yet", { status: "no_record" }, HASH, "unpublished"],
+    ["published log unreachable", null, HASH, "unchecked"],
+    ["record present but proof invalid", proof("invalid", HASH), HASH, "unchecked"],
+    ["record with no content hash", { status: "valid", record: {} }, HASH, "mismatch"],
+  ];
+
+  let agreed = 0;
+  for (const [name, input, expected, want] of cases) {
+    const got = agreesWithPublished(input, expected).state;
+    if (got === want) agreed += 1;
+    else console.log(`  MISMATCH ${name}: expected ${want}, got ${got}`);
+  }
+  console.log(`  ${agreed}/${cases.length} published-record agreement cases`);
+  if (agreed !== cases.length) process.exit(1);
+}

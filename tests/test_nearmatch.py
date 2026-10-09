@@ -307,6 +307,44 @@ class TestIndex(IndexTestCase):
         self.assertEqual(self.index.unreadable_rows, 1)
 
 
+class TestSearchDirection(IndexTestCase):
+    """Both directions, and why filtering after the query would be wrong.
+
+    Truncating a result set and then filtering it lets anyone bury a real match
+    by registering enough noise, which is the same attacker-controlled channel
+    the alert policy exists for, turned into suppression.
+    """
+
+    def test_after_position_returns_only_later_registrations(self):
+        for position in range(5):
+            self.add(position)
+        found = self.index.search([phash(BASE_64)], 90, after_position=2)
+        self.assertEqual(sorted(c.position for c in found), [3, 4])
+
+    def test_before_position_returns_only_earlier_registrations(self):
+        for position in range(5):
+            self.add(position)
+        found = self.index.search([phash(BASE_64)], 90, before_position=2)
+        self.assertEqual(sorted(c.position for c in found), [0, 1])
+
+    def test_the_two_directions_compose(self):
+        for position in range(6):
+            self.add(position)
+        found = self.index.search([phash(BASE_64)], 90,
+                                  after_position=1, before_position=4)
+        self.assertEqual(sorted(c.position for c in found), [2, 3])
+
+    def test_a_later_match_is_not_lost_behind_a_limit(self):
+        # The filter has to be in SQL. Applied to an already-truncated result
+        # set, registering enough earlier noise would hide the later match the
+        # artist actually needs to see.
+        for position in range(60):
+            self.add(position)
+        found = self.index.search([phash(BASE_64)], 90,
+                                  after_position=55, limit=5)
+        self.assertEqual(sorted(c.position for c in found), [56, 57, 58, 59])
+
+
 class TestMonitoring(IndexTestCase):
     def test_only_earlier_registrations_are_alerted(self):
         # A later registration cannot be what was copied from.

@@ -272,6 +272,38 @@ export async function verifyPosition(baseUrl, position) {
 }
 
 /**
+ * Whether a published record is the one a server said it was.
+ *
+ * Verifying position N alone proves something is in the log at N. It does not
+ * prove it is the record you were told about, and the live log runs ahead of
+ * publication, so position N can hold a different record entirely. Comparing
+ * the content hash is what turns an inclusion proof into a statement about the
+ * thing on screen.
+ *
+ * Three outcomes, kept apart on purpose. "Not published yet" is ordinary and
+ * says nothing is wrong. "Does not match" means the published log and the
+ * server disagree about what is at that position, which is the one result
+ * nobody should ever see.
+ */
+export function agreesWithPublished(proof, expectedContentHash) {
+  if (!proof) return { state: "unchecked", detail: "The published log could not be read." };
+  if (proof.status === Status.NO_RECORD) {
+    return { state: "unpublished",
+             detail: "Not in the published log yet. Records appear at the next checkpoint." };
+  }
+  const published = proof.record?.content?.sha256;
+  if (!published || published !== expectedContentHash) {
+    return { state: "mismatch",
+             detail: "The published log holds a different record at this position." };
+  }
+  if ([Status.VALID, Status.VALID_UNDERWITNESSED, Status.PENDING_WITNESS]
+      .includes(proof.status)) {
+    return { state: "verified", detail: String(proof.status).replaceAll("_", " ") };
+  }
+  return { state: "unchecked", detail: String(proof.status).replaceAll("_", " ") };
+}
+
+/**
  * Every published record, for a client-side near-match search.
  *
  * Reads the whole log. Verifiable, because the hashes are inside records

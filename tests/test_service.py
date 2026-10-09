@@ -508,6 +508,97 @@ class TestIndexing(ServiceTestCase):
         self.assertFalse(body["searchable"])
 
 
+class TestMonitoring(ServiceTestCase):
+    """The dashboard's data, scoped by session rather than by a parameter."""
+
+    def setUp(self):
+        super().setUp()
+        self.index = NearMatchIndex()
+        self.addCleanup(self.index.close)
+        self.services.index = self.index
+
+    def payload(self, sha, phash):
+        return {
+            "sha256": sha, "media_type": "image/png", "size_bytes": 1024,
+            "similarity_fingerprints": {"phash": phash},
+            "derivation_version": 1, "claim_type": "created",
+        }
+
+    def other_account(self, email):
+        import base64
+        import time as _t
+
+        client = Client(self.client.base)
+        client.request("POST", "/api/accounts", {"email": email, "password": PASSWORD})
+        client.refresh_csrf()
+        _, enrol = client.request("POST", "/api/mfa/enrol", {})
+        b32 = enrol["otpauth_uri"].split("secret=")[1].split("&")[0]
+        secret = base64.b32decode(b32 + "=" * (-len(b32) % 8))
+        client.request("POST", "/api/mfa/confirm",
+                       {"code": totp_code(secret, int(_t.time() // 30))})
+        client.refresh_csrf()
+        return client
+
+    def test_monitoring_needs_a_session(self):
+        status, _ = self.client.request("GET", "/api/monitoring", csrf=False)
+        self.assertEqual(status, 401)
+
+    def test_it_returns_only_the_callers_own_works(self):
+        # The published log is public and the old page took an identity from
+        # the query string, so anyone could read anyone's monitoring view.
+        mine, _ = self.with_mfa()
+        mine.request("POST", "/api/works", self.payload("a" * 64, "ffffffffffffffff"))
+        theirs = self.other_account("other@example.com")
+        theirs.request("POST", "/api/works", self.payload("b" * 64, "0000000000000000"))
+
+        _, body = mine.request("GET", "/api/monitoring", csrf=False)
+        self.assertEqual([w["position"] for w in body["works"]], [0])
+
+    def test_a_later_near_match_by_someone_else_is_reported(self):
+        mine, _ = self.with_mfa()
+        mine.request("POST", "/api/works", self.payload("a" * 64, "ffffffffffffffff"))
+        theirs = self.other_account("other@example.com")
+        theirs.request("POST", "/api/works", self.payload("b" * 64, "fffffffffffffffc"))
+
+        _, body = mine.request("GET", "/api/monitoring", csrf=False)
+        self.assertEqual(len(body["matches"]), 1)
+        match = body["matches"][0]
+        self.assertEqual((match["subject_position"], match["candidate_position"]), (0, 1))
+        self.assertEqual(match["candidate"]["assurance_level"], "unverified")
+
+    def test_your_own_later_work_is_never_reported_as_a_match(self):
+        mine, _ = self.with_mfa()
+        mine.request("POST", "/api/works", self.payload("a" * 64, "ffffffffffffffff"))
+        mine.request("POST", "/api/works", self.payload("b" * 64, "fffffffffffffffc"))
+        _, body = mine.request("GET", "/api/monitoring", csrf=False)
+        self.assertEqual(body["matches"], [])
+
+    def test_an_earlier_work_by_someone_else_is_not_reported(self):
+        # Only later registrations can be copies. An earlier one cannot be.
+        theirs = self.other_account("other@example.com")
+        theirs.request("POST", "/api/works", self.payload("b" * 64, "fffffffffffffffc"))
+        mine, _ = self.with_mfa()
+        mine.request("POST", "/api/works", self.payload("a" * 64, "ffffffffffffffff"))
+        _, body = mine.request("GET", "/api/monitoring", csrf=False)
+        self.assertEqual(body["matches"], [])
+
+    def test_an_account_with_no_works_gets_an_empty_view(self):
+        client, _ = self.with_mfa()
+        _, body = client.request("GET", "/api/monitoring", csrf=False)
+        self.assertEqual((body["works"], body["matches"]), ([], []))
+        self.assertTrue(body["searched"])
+
+    def test_no_index_is_reported_rather_than_read_as_nothing_found(self):
+        # An absent index means the search did not run. Rendering that as "no
+        # matches" would tell an artist they are safe on the strength of a
+        # search nobody performed.
+        self.services.index = None
+        client, _ = self.with_mfa()
+        client.request("POST", "/api/works", self.payload("a" * 64, "ffffffffffffffff"))
+        _, body = client.request("GET", "/api/monitoring", csrf=False)
+        self.assertFalse(body["searched"])
+
+
 class TestNotFound(ServiceTestCase):
     """A dead link is the common way to arrive at a 404 on this product.
 

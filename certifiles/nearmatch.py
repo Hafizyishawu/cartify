@@ -175,13 +175,17 @@ class NearMatchIndex:
         exclude: Iterable[int] = (),
         limit: int = 25,
         before_position: int | None = None,
+        after_position: int | None = None,
     ) -> list[Candidate]:
         """Candidates resembling the query, most attention-worthy first.
 
         `exclude` keeps an artist's own earlier registrations out of their own
         alerts, which would otherwise be the overwhelming majority of hits.
 
-        `before_position` restricts the search in SQL rather than after it.
+        Two directions, both restricted in SQL rather than after the fact.
+        `before_position` is the alert direction: a new registration looking for
+        earlier work it resembles. `after_position` is the dashboard direction:
+        an artist looking for later work resembling theirs.
         Filtering a truncated result set would let anyone bury an artist's
         alert simply by registering enough later near-matches — the same
         attacker-controlled channel described under AlertPolicy, turned into
@@ -215,6 +219,9 @@ class NearMatchIndex:
         if before_position is not None:
             sql += " AND position < ?"
             parameters.append(before_position)
+        if after_position is not None:
+            sql += " AND position > ?"
+            parameters.append(after_position)
 
         self.unreadable_rows = 0
         for position, kind, value, quality in self._connection.execute(sql, parameters):
